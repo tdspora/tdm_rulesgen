@@ -1,0 +1,46 @@
+name: Bug report
+description: Report unexpected behavior or a defect
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please search existing issues first.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong in one or two sentences?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal commands, request payloads, or code that trigger the issue.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Git SHA, tag, or package version if known.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and anything else relevant.
+      render: markdown

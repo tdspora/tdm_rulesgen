@@ -26,6 +26,10 @@ Fix formatting if needed:
 uv run ruff format .
 ```
 
+## Issues
+
+- Use the **bug report** or **feature request** templates under `.github/ISSUE_TEMPLATE/` when you open an issue on GitHub.
+
 ## Pull requests
 
 - Describe what changed and why.
