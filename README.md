@@ -174,3 +174,11 @@ The HTTP layer remains thin. Routers depend on services, services depend on comp
 Natural-language parsing flows through an LLM gateway adapter that returns an untrusted `semantic_frame` plus DSL candidate, and the service only compiles the candidate after AST validation succeeds.
 
 Preview execution uses the local preview executor for row-phase helpers, while full dataset generation runs through the OpenSandbox execution adapter and writes manifests plus outputs into the configured local OSSFS root.
+
+## License
+
+This project is licensed under the **Apache License 2.0**. See [`LICENSE`](LICENSE) for the full text and [`NOTICE`](NOTICE) for copyright attribution.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). This project follows the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Report security issues according to [`SECURITY.md`](SECURITY.md).
