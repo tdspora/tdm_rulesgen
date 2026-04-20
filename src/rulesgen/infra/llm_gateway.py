@@ -66,8 +66,7 @@ class StubLLMGatewayClient:
                     level=DiagnosticLevel.WARNING,
                     code="prompt_security_review",
                     message=(
-                        "Input matched prompt-security review heuristics and "
-                        "should be audited."
+                        "Input matched prompt-security review heuristics and should be audited."
                     ),
                 )
             )
@@ -118,8 +117,8 @@ class StubLLMGatewayClient:
         if conditional:
             percent = float(conditional.group("percent")) / 100.0
             dsl_candidate = (
-                f"{percent:g} * col(\"{conditional.group('base_col')}\") "
-                f"if col(\"{conditional.group('condition_col')}\") >= "
+                f'{percent:g} * col("{conditional.group("base_col")}") '
+                f'if col("{conditional.group("condition_col")}") >= '
                 f"{conditional.group('threshold')} else 0"
             )
             return GatewayTranslation(

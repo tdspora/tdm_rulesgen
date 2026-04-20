@@ -53,9 +53,7 @@ def generate_dataset(
         job_id=job.job_id,
         status=job.status,
         row_count=int(
-            job.result.get("row_count", payload.row_count)
-            if job.result
-            else payload.row_count
+            job.result.get("row_count", payload.row_count) if job.result else payload.row_count
         ),
         planned_column_sources=planned_column_sources,
         diagnostics=[

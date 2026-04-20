@@ -20,8 +20,7 @@ from rulesgen.execution.engine import execute_generation_plan
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         raise SystemExit(
-            "usage: python -m rulesgen.execution.opensandbox_runner "
-            "<manifest> <result>"
+            "usage: python -m rulesgen.execution.opensandbox_runner <manifest> <result>"
         )
 
     manifest_path = Path(argv[1])

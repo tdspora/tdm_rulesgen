@@ -74,8 +74,7 @@ class RuleCompilerService:
                         level=DiagnosticLevel.ERROR,
                         code="llm_gateway_missing",
                         message=(
-                            "Configure an LLM gateway client before parsing "
-                            "natural-language rules."
+                            "Configure an LLM gateway client before parsing natural-language rules."
                         ),
                     )
                 ],

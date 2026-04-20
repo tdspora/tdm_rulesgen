@@ -123,9 +123,7 @@ def _rule_phase(compiled_rule: CompiledRule) -> HelperPhase:
 
 def _topological_order(compiled_rules: list[CompiledRule]) -> list[CompiledRule]:
     by_target = {
-        rule.target_column: rule
-        for rule in compiled_rules
-        if rule.target_column is not None
+        rule.target_column: rule for rule in compiled_rules if rule.target_column is not None
     }
     pending = {rule.target_column or rule.artifact_id: rule for rule in compiled_rules}
     resolved: set[str] = set()
@@ -225,9 +223,7 @@ def _build_aggregate_lookup(
     return lookup
 
 
-def _compile_expression(
-    expression: str, *, max_length: int, max_depth: int, max_nodes: int
-) -> Any:
+def _compile_expression(expression: str, *, max_length: int, max_depth: int, max_nodes: int) -> Any:
     tree = parse_expression(expression, max_length=max_length)
     validated = DSLValidator(max_depth=max_depth, max_nodes=max_nodes).validate(tree)
     return compile(validated.tree, filename="<rulesgen-subexpression>", mode="eval")

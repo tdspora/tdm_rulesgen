@@ -263,9 +263,7 @@ class DSLValidator(ast.NodeVisitor):
             )
 
         keyword_map = {
-            keyword.arg: keyword.value
-            for keyword in node.keywords
-            if keyword.arg is not None
+            keyword.arg: keyword.value for keyword in node.keywords if keyword.arg is not None
         }
         if function_name == "group_sum":
             if set(keyword_map) != {"key", "value"} or node.args:

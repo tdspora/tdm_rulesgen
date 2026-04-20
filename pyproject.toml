@@ -28,6 +28,7 @@ dependencies = [
 dev = [
   "mypy",
   "pip-audit",
+  "pre-commit",
   "pytest",
   "pytest-cov",
   "hypothesis",
