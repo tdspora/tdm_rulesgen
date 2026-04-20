@@ -66,3 +66,21 @@ no_implicit_reexport = true
 
 [tool.uv]
 required-version = ">=0.8.0"
+
+[tool.semantic_release]
+commit_parser = "conventional"
+allow_zero_version = true
+major_on_zero = false
+build_command = "uv build"
+version_toml = ["pyproject.toml:project.version"]
+
+[tool.semantic_release.branches.main]
+match = "(main|master)"
+prerelease = false
+
+[tool.semantic_release.changelog]
+mode = "update"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+output_format = "md"

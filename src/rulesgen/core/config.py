@@ -7,6 +7,8 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from rulesgen.version_info import package_version
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -17,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "rulesgen"
-    app_version: str = "0.1.0"
+    app_version: str = Field(default_factory=package_version)
     env: str = "local"
     docs_enabled: bool = True
     auth_enabled: bool = False
