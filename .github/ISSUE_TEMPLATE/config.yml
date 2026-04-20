@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/tdspora/tdm_rulesgen/security/advisories/new
+    about: Report a security issue privately via GitHub Security Advisories (preferred). See SECURITY.md if this link is unavailable.
+  - name: Code of Conduct concerns
+    url: https://github.com/tdspora/tdm_rulesgen/blob/main/CODE_OF_CONDUCT.md
+    about: Read our Contributor Covenant and enforcement expectations.
