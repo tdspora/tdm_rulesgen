@@ -1,0 +1,15 @@
+---
+description: Python service conventions for rulesgen
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Service Standards
+
+- Keep the HTTP edge thin: routers and schemas translate requests, while business logic lives in `services`, `compiler`, `execution`, `domain`, or `infra`.
+- Extend the DSL through AST validation and whitelisted runtime helpers; do not add features by stitching together executable Python strings.
+- Preserve determinism for preview behavior by threading explicit seeds through runtime code and Faker-backed helpers.
+- Prefer typed dataclasses, Pydantic models, and small pure functions over unstructured dictionaries and hidden mutable state.
+- Follow the existing service layout under `src/rulesgen` and prefer dependency injection through the app container over direct construction in endpoints.
+- For middleware, stay compatible with the current Starlette/FastAPI stack and prefer pure ASGI-style patterns over shortcut abstractions that hide request flow.
+- Add focused tests when changing parser, validator, runtime helper, API contract, or job orchestration behavior.

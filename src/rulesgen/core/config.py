@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+import sys
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="RULESGEN_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_name: str = "rulesgen"
+    app_version: str = "0.1.0"
+    env: str = "local"
+    docs_enabled: bool = True
+    auth_enabled: bool = False
+    api_key: str = "change-me"
+    cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    trusted_hosts: list[str] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1", "testserver"]
+    )
+    log_level: str = "INFO"
+    problem_base_url: str = "https://docs.rulesgen.local/problems"
+    dsl_max_length: int = 2_000
+    dsl_max_depth: int = 12
+    dsl_max_nodes: int = 128
+    data_dir: Path = Path(".rulesgen-data")
+    rules_repository_dir: Path = Path(".rulesgen-data/rules")
+    jobs_repository_dir: Path = Path(".rulesgen-data/jobs")
+    artifacts_repository_dir: Path = Path(".rulesgen-data/artifacts")
+    audits_repository_dir: Path = Path(".rulesgen-data/audits")
+    ossfs_root_dir: Path = Path(".rulesgen-data/ossfs")
+    sandbox_workspace_dir: Path = Path(".rulesgen-data/opensandbox")
+    sandbox_timeout_seconds: float = 30.0
+    sandbox_python_executable: str = sys.executable
+    llm_gateway_backend: str = "stub"
+    llm_gateway_url: str | None = None
+    llm_gateway_timeout_seconds: float = 10.0
+    llm_prompt_template_version: str = "v1"
+    llm_model_name: str = "rulesgen-local-stub"
+
+    @field_validator("cors_allow_origins", "trusted_hosts", mode="before")
+    @classmethod
+    def split_csv(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()

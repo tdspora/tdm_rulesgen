@@ -1,0 +1,14 @@
+---
+description: Core rulesgen domain and safety context
+alwaysApply: true
+---
+
+# Rulesgen Domain Context
+
+- Treat all NL and DSL rule input as untrusted until it has passed parser and AST validation.
+- Use the canonical pipeline vocabulary from `docs/domain-dictionary.md`: `semantic_frame`, `compiled_rule`, `execution_preview`, `job`, `diagnostics`.
+- Preserve the distinction between `natural_language` input and the internal DSL contract; do not describe the system as direct NL-to-Python execution.
+- When describing the planned NL translation stage, state that an LLM produces the `semantic_frame` and DSL candidate, and that both remain untrusted until validation succeeds.
+- Prefer `validated AST`, `runtime helper whitelist`, and `preview executor` over vague phrases like "generated code" or "sandboxed Python."
+- Do not claim the current local executor is a full sandbox; stronger isolation is still a roadmap concern.
+- When introducing a new intent, runtime helper, or pipeline concept, update `docs/domain-dictionary.md` in the same change.
