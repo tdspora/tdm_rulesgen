@@ -560,12 +560,18 @@ uv run pip-audit
 
 ## Release process
 
-Pushes to `main` run CI, build the wheel and sdist, create the GitHub Release via semantic-release, attach release artifacts to that release, and publish the same distributions to PyPI.
+Pushes to `main` run CI, build the wheel and sdist, create the GitHub Release via semantic-release, attach release artifacts to that release, publish the same distributions to PyPI, and build/push a Docker image to Docker Hub.
 
 Before enabling automated releases, configure these repository secrets:
 
 - `DEPLOY_KEY` for the SSH deploy key that semantic-release uses to push version bump commits and tags.
 - `PYPI_TOKEN` for a PyPI API token scoped to the `rulesgen` project.
+- `DOCKER_HUB_USER` for the Docker Hub namespace that owns the published `rulesgen` image.
+- `DOCKER_HUB_TOKEN` for a Docker Hub access token with permission to push images for that namespace.
+
+The PyPI and Docker publishing jobs both check out the GitHub release tag created by semantic-release and verify that `project.version` matches the released semver before publishing.
+
+When a release is published, the workflow pushes `DOCKER_HUB_USER/rulesgen` with `latest`, `vX.Y.Z`, and `X.Y.Z` tags, while PyPI receives distributions built from that same tagged source.
 
 Before the first automated release, create a baseline tag that matches `project.version` in `pyproject.toml`:
 
