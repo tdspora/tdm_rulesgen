@@ -22,6 +22,7 @@ dependencies = [
   "pydantic-settings",
   "httpx",
   "faker",
+  "opensandbox>=0.1.7",
 ]
 
 [project.optional-dependencies]

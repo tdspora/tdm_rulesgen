@@ -13,7 +13,7 @@ from rulesgen.domain.models import (
     SourceType,
 )
 from rulesgen.domain.repositories import RuleRepository
-from rulesgen.execution.opensandbox import OpenSandboxExecutionAdapter
+from rulesgen.execution.interfaces import DatasetSandboxExecutor
 
 
 class GenerationService:
@@ -22,7 +22,7 @@ class GenerationService:
         *,
         compiler: RuleCompilerService,
         rule_repository: RuleRepository,
-        sandbox_adapter: OpenSandboxExecutionAdapter,
+        sandbox_adapter: DatasetSandboxExecutor,
     ) -> None:
         self.compiler = compiler
         self.rule_repository = rule_repository

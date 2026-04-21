@@ -10,15 +10,54 @@ compilation, local preview execution, and sandbox-backed dataset generation.
 - Versioned API modules with health, rules, dataset, and jobs endpoints
 - A restricted DSL compiler built on Python AST validation
 - Filesystem-backed repositories for rules, jobs, prompt audits, and artifacts
-- A local preview executor plus an OpenSandbox adapter for full dataset generation
+- A local preview executor, a default subprocess dataset executor, and an optional Alibaba OpenSandbox adapter for full dataset generation
 - Tests, CI, and a container build baseline
 
 ## Quick start
 
-### Start the service
+### Run the OpenSandbox-backed flow
+
+The quickest way to validate the OpenSandbox integration end to end is:
+
+```bash
+./scripts/quick_start.sh
+```
+
+By default the script:
+
+- builds the `rulesgen:local` image for sandbox jobs
+- starts or reuses `opensandbox-server`
+- starts a local `rulesgen` API with `RULESGEN_SANDBOX_BACKEND=opensandbox`
+- uses direct sandbox endpoints (`RULESGEN_OPENSANDBOX_USE_SERVER_PROXY=false`)
+- runs the parse, compile, preview, dataset-generation, and job-poll flow below
+
+Requirements: `uv`, Docker, and the Docker Compose plugin.
+
+To use the local subprocess dataset executor instead:
+
+```bash
+QUICK_START_BACKEND=subprocess ./scripts/quick_start.sh
+```
+
+### Start the service manually
+
+Local subprocess dataset executor:
 
 ```bash
 uv sync --extra dev
+uv run uvicorn rulesgen.main:app --reload
+```
+
+OpenSandbox-backed dataset generation:
+
+```bash
+docker build -t rulesgen:local .
+docker compose -f compose.yaml -f compose.opensandbox.yaml up --build -d opensandbox-server
+RULESGEN_SANDBOX_BACKEND=opensandbox \
+RULESGEN_OPENSANDBOX_DOMAIN=127.0.0.1:8090 \
+RULESGEN_OPENSANDBOX_PROTOCOL=http \
+RULESGEN_OPENSANDBOX_USE_SERVER_PROXY=false \
+RULESGEN_OPENSANDBOX_IMAGE=rulesgen:local \
 uv run uvicorn rulesgen.main:app --reload
 ```
 
@@ -28,6 +67,22 @@ In another terminal:
 export BASE_URL=http://127.0.0.1:8000
 curl -s "$BASE_URL/health/ready"
 ```
+
+### Start with Docker Compose
+
+Default local stack with the current subprocess dataset executor:
+
+```bash
+docker compose up --build
+```
+
+OpenSandbox control plane for the host-run API or `./scripts/quick_start.sh`:
+
+```bash
+docker compose -f compose.yaml -f compose.opensandbox.yaml up --build opensandbox-server
+```
+
+The OpenSandbox quick-start path expects the built `rulesgen:local` image to be available for sandbox jobs and uses direct sandbox endpoint access from the host-run API.
 
 ### End-to-end flow
 
@@ -138,7 +193,12 @@ The job response includes:
 - `diagnostics` from the sandbox execution path
 
 By default, generated files are written under the configured local OSSFS root
-(`.rulesgen-data/ossfs/` unless overridden with environment variables).
+(`.rulesgen-data/ossfs/` unless overridden with environment variables). With
+`RULESGEN_SANDBOX_BACKEND=subprocess`, full dataset generation runs through the
+local subprocess dataset executor. With
+`RULESGEN_SANDBOX_BACKEND=opensandbox`, the same manifest is uploaded into an
+Alibaba OpenSandbox-managed container and the generated dataset is downloaded
+back into the local OSSFS root.
 
 ## Useful commands
 
@@ -173,7 +233,10 @@ The HTTP layer remains thin. Routers depend on services, services depend on comp
 
 Natural-language parsing flows through an LLM gateway adapter that returns an untrusted `semantic_frame` plus DSL candidate, and the service only compiles the candidate after AST validation succeeds.
 
-Preview execution uses the local preview executor for row-phase helpers, while full dataset generation runs through the OpenSandbox execution adapter and writes manifests plus outputs into the configured local OSSFS root.
+Preview execution uses the local preview executor for row-phase helpers, while
+full dataset generation uses either the default subprocess dataset executor or
+the Alibaba OpenSandbox adapter, both of which preserve the same manifest and
+artifact contract under the configured local OSSFS root.
 
 ## License
 

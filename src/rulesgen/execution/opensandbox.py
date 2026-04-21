@@ -21,7 +21,44 @@ from rulesgen.domain.repositories import ArtifactRepository
 from rulesgen.infra.ossfs import LocalOssfsStore
 
 
-class OpenSandboxExecutionAdapter:
+def serialize_compiled_rule(rule: CompiledRule) -> dict[str, Any]:
+    return {
+        "artifact_id": rule.artifact_id,
+        "target_column": rule.target_column,
+        "expression": rule.expression,
+        "normalized_expression": rule.normalized_expression,
+        "dependencies": rule.dependencies,
+        "functions": rule.functions,
+        "helper_phases": {name: phase.value for name, phase in rule.helper_phases.items()},
+        "aggregate_helper": (
+            None
+            if rule.aggregate_helper is None
+            else {
+                "helper_name": rule.aggregate_helper.helper_name,
+                "key_expression": rule.aggregate_helper.key_expression,
+                "value_expression": rule.aggregate_helper.value_expression,
+            }
+        ),
+        "source_type": rule.source_type.value,
+        "dsl_version": rule.dsl_version,
+        "explainability_trace": None
+        if rule.explainability_trace is None
+        else {
+            "source_type": rule.explainability_trace.source_type.value,
+            "source_text": rule.explainability_trace.source_text,
+            "semantic_frame": rule.explainability_trace.semantic_frame,
+            "dsl_candidate": rule.explainability_trace.dsl_candidate,
+            "normalized_expression": rule.explainability_trace.normalized_expression,
+            "prompt_audit_id": rule.explainability_trace.prompt_audit_id,
+            "prompt_template_version": rule.explainability_trace.prompt_template_version,
+            "model_name": rule.explainability_trace.model_name,
+            "metadata": rule.explainability_trace.metadata,
+        },
+        "created_at": rule.created_at.isoformat(),
+    }
+
+
+class SubprocessSandboxExecutionAdapter:
     def __init__(
         self,
         *,
@@ -53,7 +90,7 @@ class OpenSandboxExecutionAdapter:
         now = datetime.now(UTC)
         job_dir = self.ossfs_store.job_dir(job_id)
         rows_path = self.ossfs_store.write_rows(job_id, "input_rows.json", rows)
-        compiled_rules_payload = [self._serialize_compiled_rule(rule) for rule in compiled_rules]
+        compiled_rules_payload = [serialize_compiled_rule(rule) for rule in compiled_rules]
         compiled_rules_path = self.ossfs_store.write_json(
             job_id,
             "compiled_rules.json",
@@ -187,38 +224,5 @@ class OpenSandboxExecutionAdapter:
             },
         )
 
-    def _serialize_compiled_rule(self, rule: CompiledRule) -> dict[str, Any]:
-        return {
-            "artifact_id": rule.artifact_id,
-            "target_column": rule.target_column,
-            "expression": rule.expression,
-            "normalized_expression": rule.normalized_expression,
-            "dependencies": rule.dependencies,
-            "functions": rule.functions,
-            "helper_phases": {name: phase.value for name, phase in rule.helper_phases.items()},
-            "aggregate_helper": (
-                None
-                if rule.aggregate_helper is None
-                else {
-                    "helper_name": rule.aggregate_helper.helper_name,
-                    "key_expression": rule.aggregate_helper.key_expression,
-                    "value_expression": rule.aggregate_helper.value_expression,
-                }
-            ),
-            "source_type": rule.source_type.value,
-            "dsl_version": rule.dsl_version,
-            "explainability_trace": None
-            if rule.explainability_trace is None
-            else {
-                "source_type": rule.explainability_trace.source_type.value,
-                "source_text": rule.explainability_trace.source_text,
-                "semantic_frame": rule.explainability_trace.semantic_frame,
-                "dsl_candidate": rule.explainability_trace.dsl_candidate,
-                "normalized_expression": rule.explainability_trace.normalized_expression,
-                "prompt_audit_id": rule.explainability_trace.prompt_audit_id,
-                "prompt_template_version": rule.explainability_trace.prompt_template_version,
-                "model_name": rule.explainability_trace.model_name,
-                "metadata": rule.explainability_trace.metadata,
-            },
-            "created_at": rule.created_at.isoformat(),
-        }
+
+OpenSandboxExecutionAdapter = SubprocessSandboxExecutionAdapter

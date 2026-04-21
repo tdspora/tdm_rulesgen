@@ -1,0 +1,28 @@
+services:
+  rulesgen:
+    build:
+      context: .
+    image: rulesgen:local
+    ports:
+      - "8000:8000"
+    environment:
+      RULESGEN_ENV: local
+      RULESGEN_DOCS_ENABLED: "true"
+      RULESGEN_AUTH_ENABLED: "false"
+      RULESGEN_CORS_ALLOW_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
+      RULESGEN_TRUSTED_HOSTS: '["localhost","127.0.0.1","testserver","rulesgen"]'
+      RULESGEN_RULES_REPOSITORY_DIR: /home/appuser/.rulesgen-data/rules
+      RULESGEN_JOBS_REPOSITORY_DIR: /home/appuser/.rulesgen-data/jobs
+      RULESGEN_ARTIFACTS_REPOSITORY_DIR: /home/appuser/.rulesgen-data/artifacts
+      RULESGEN_AUDITS_REPOSITORY_DIR: /home/appuser/.rulesgen-data/audits
+      RULESGEN_OSSFS_ROOT_DIR: /home/appuser/.rulesgen-data/ossfs
+      RULESGEN_SANDBOX_BACKEND: subprocess
+      RULESGEN_SANDBOX_TIMEOUT_SECONDS: "30"
+      RULESGEN_SANDBOX_PYTHON_EXECUTABLE: python
+      RULESGEN_LLM_GATEWAY_BACKEND: stub
+      RULESGEN_LLM_MODEL_NAME: rulesgen-local-stub
+    volumes:
+      - rulesgen-data:/home/appuser/.rulesgen-data
+
+volumes:
+  rulesgen-data:

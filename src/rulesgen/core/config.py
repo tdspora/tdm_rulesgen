@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from rulesgen.version_info import package_version
 
@@ -24,8 +26,10 @@ class Settings(BaseSettings):
     docs_enabled: bool = True
     auth_enabled: bool = False
     api_key: str = "change-me"
-    cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
-    trusted_hosts: list[str] = Field(
+    cors_allow_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
+    trusted_hosts: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["localhost", "127.0.0.1", "testserver"]
     )
     log_level: str = "INFO"
@@ -39,9 +43,19 @@ class Settings(BaseSettings):
     artifacts_repository_dir: Path = Path(".rulesgen-data/artifacts")
     audits_repository_dir: Path = Path(".rulesgen-data/audits")
     ossfs_root_dir: Path = Path(".rulesgen-data/ossfs")
+    sandbox_backend: Literal["subprocess", "opensandbox"] = "subprocess"
     sandbox_workspace_dir: Path = Path(".rulesgen-data/opensandbox")
     sandbox_timeout_seconds: float = 30.0
     sandbox_python_executable: str = sys.executable
+    opensandbox_domain: str = "localhost:8080"
+    opensandbox_protocol: Literal["http", "https"] = "http"
+    opensandbox_api_key: str | None = None
+    opensandbox_request_timeout_seconds: float = 30.0
+    opensandbox_use_server_proxy: bool = False
+    opensandbox_image: str = "rulesgen:local"
+    opensandbox_ttl_seconds: float = 600.0
+    opensandbox_ready_timeout_seconds: float = 30.0
+    opensandbox_workspace_dir: str = "/tmp/rulesgen-opensandbox"
     llm_gateway_backend: str = "stub"
     llm_gateway_url: str | None = None
     llm_gateway_timeout_seconds: float = 10.0
@@ -52,7 +66,12 @@ class Settings(BaseSettings):
     @classmethod
     def split_csv(cls, value: object) -> object:
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                return json.loads(stripped)
+            return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
 
 

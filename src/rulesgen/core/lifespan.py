@@ -13,8 +13,10 @@ from rulesgen.auth.base import AuthBackend
 from rulesgen.auth.resolver import AuthResolver
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings
+from rulesgen.execution.alibaba_opensandbox import AlibabaOpenSandboxExecutionAdapter
+from rulesgen.execution.interfaces import DatasetSandboxExecutor
 from rulesgen.execution.local import LocalExecutionAdapter
-from rulesgen.execution.opensandbox import OpenSandboxExecutionAdapter
+from rulesgen.execution.opensandbox import SubprocessSandboxExecutionAdapter
 from rulesgen.infra.llm_gateway import (
     HttpLLMGatewayClient,
     LLMGatewayClient,
@@ -78,15 +80,35 @@ def build_container(settings: Settings) -> AppContainer:
     artifact_repository = FileSystemArtifactRepository(settings.artifacts_repository_dir)
     execution_adapter = LocalExecutionAdapter()
     ossfs_store = LocalOssfsStore(settings.ossfs_root_dir)
-    sandbox_adapter = OpenSandboxExecutionAdapter(
-        ossfs_store=ossfs_store,
-        artifact_repository=artifact_repository,
-        sandbox_python_executable=settings.sandbox_python_executable,
-        timeout_seconds=settings.sandbox_timeout_seconds,
-        max_length=settings.dsl_max_length,
-        max_depth=settings.dsl_max_depth,
-        max_nodes=settings.dsl_max_nodes,
-    )
+    sandbox_adapter: DatasetSandboxExecutor
+    if settings.sandbox_backend == "opensandbox":
+        sandbox_adapter = AlibabaOpenSandboxExecutionAdapter(
+            ossfs_store=ossfs_store,
+            artifact_repository=artifact_repository,
+            timeout_seconds=settings.sandbox_timeout_seconds,
+            max_length=settings.dsl_max_length,
+            max_depth=settings.dsl_max_depth,
+            max_nodes=settings.dsl_max_nodes,
+            opensandbox_domain=settings.opensandbox_domain,
+            opensandbox_protocol=settings.opensandbox_protocol,
+            opensandbox_api_key=settings.opensandbox_api_key,
+            opensandbox_request_timeout_seconds=settings.opensandbox_request_timeout_seconds,
+            opensandbox_use_server_proxy=settings.opensandbox_use_server_proxy,
+            opensandbox_image=settings.opensandbox_image,
+            opensandbox_ttl_seconds=settings.opensandbox_ttl_seconds,
+            opensandbox_ready_timeout_seconds=settings.opensandbox_ready_timeout_seconds,
+            opensandbox_workspace_dir=settings.opensandbox_workspace_dir,
+        )
+    else:
+        sandbox_adapter = SubprocessSandboxExecutionAdapter(
+            ossfs_store=ossfs_store,
+            artifact_repository=artifact_repository,
+            sandbox_python_executable=settings.sandbox_python_executable,
+            timeout_seconds=settings.sandbox_timeout_seconds,
+            max_length=settings.dsl_max_length,
+            max_depth=settings.dsl_max_depth,
+            max_nodes=settings.dsl_max_nodes,
+        )
     rules_service = RulesService(
         compiler=compiler,
         rule_repository=rule_repository,
