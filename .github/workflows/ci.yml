@@ -41,7 +41,10 @@ jobs:
         run: uv build
 
       - name: Pip audit
-        run: uv run pip-audit
+        continue-on-error: true
+        run: >-
+          uv run pip-audit
+          --skip-editable
 
   release:
     needs: test

@@ -19,3 +19,12 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+      - id: pip-audit
+        name: pip-audit (warn only)
+        entry: >-
+          bash -lc 'uv run pip-audit
+          --skip-editable
+          || true'
+        language: system
+        pass_filenames: false
+        types: [python]
