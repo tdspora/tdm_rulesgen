@@ -21,6 +21,8 @@ dependencies = [
   "httpx",
   "faker",
   "opensandbox>=0.1.7",
+  "litellm>=1.83.10",
+  "gptcache>=0.1.44",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +38,11 @@ dev = [
   "pytest-cov",
   "hypothesis",
   "ruff",
+]
+
+[tool.hatch.build]
+include = [
+  "src/rulesgen/resources/**/*.md",
 ]
 
 [tool.hatch.build.targets.wheel]

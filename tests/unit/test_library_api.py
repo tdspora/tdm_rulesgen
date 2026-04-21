@@ -55,6 +55,8 @@ def test_package_root_parse_helper_supports_natural_language(tmp_path: Path) -> 
 
     assert frame.dsl_candidate == "0.1 * col('salary') if col('job_level') >= 5 else 0"
     assert frame.prompt_audit is not None
+    assert len(frame.prompt_audits) == 1
+    assert frame.metrics is not None
 
 
 def test_package_root_build_container_returns_wired_services(tmp_path: Path) -> None:

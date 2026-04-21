@@ -5,6 +5,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from rulesgen.api.dependencies import get_current_principal, get_rules_service
+from rulesgen.api.model_mapping import (
+    to_domain_schema,
+    to_llm_metrics_schema,
+    to_parse_request_args,
+)
 from rulesgen.auth.models import Principal
 from rulesgen.domain.models import (
     AggregateHelperSpec,
@@ -48,8 +53,11 @@ def _to_trace_schema(trace: ExplainabilityTrace | None) -> ExplainabilityTraceSc
         dsl_candidate=trace.dsl_candidate,
         normalized_expression=trace.normalized_expression,
         prompt_audit_id=trace.prompt_audit_id,
+        prompt_audit_ids=trace.prompt_audit_ids,
         prompt_template_version=trace.prompt_template_version,
         model_name=trace.model_name,
+        provider_name=trace.provider_name,
+        metrics=to_llm_metrics_schema(trace.metrics),
         metadata=trace.metadata,
     )
 
@@ -63,6 +71,12 @@ def _to_prompt_audit_schema(record: PromptAuditRecord | None) -> PromptAuditSche
         backend=record.backend,
         prompt_hash=record.prompt_hash,
         suspicious=record.suspicious,
+        prompt_kind=record.prompt_kind,
+        attempt_number=record.attempt_number,
+        model_name=record.model_name,
+        provider_name=record.provider_name,
+        latency_ms=record.latency_ms,
+        metrics=to_llm_metrics_schema(record.metrics),
         metadata=record.metadata,
     )
 
@@ -84,10 +98,13 @@ def parse_rule(
     principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> ParseRuleResponse:
     del principal
+    source_text, source_type, target_column = to_parse_request_args(payload)
     frame = rules_service.parse(
-        source_text=payload.source_text,
-        source_type=payload.source_type,
-        target_column=payload.target_column,
+        source_text=source_text,
+        source_type=source_type,
+        target_column=target_column,
+        table_name=payload.table_name,
+        schema=to_domain_schema(payload.schema_),
         schema_columns=payload.schema_columns,
     )
     return ParseRuleResponse(
@@ -103,6 +120,8 @@ def parse_rule(
         translation_confidence=frame.translation_confidence,
         explainability_trace=_to_trace_schema(frame.explainability_trace),
         prompt_audit=_to_prompt_audit_schema(frame.prompt_audit),
+        prompt_audits=[_to_prompt_audit_schema(item) for item in frame.prompt_audits if item],
+        metrics=to_llm_metrics_schema(frame.metrics),
     )
 
 

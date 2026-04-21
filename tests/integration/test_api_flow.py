@@ -18,10 +18,29 @@ def test_rules_and_jobs_flow(client) -> None:
     parse_response = client.post(
         "/rules/parse",
         json={
-            "source_text": 'coalesce(col("bonus"), 0) + col("salary")',
-            "source_type": "dsl",
-            "target_column": "total_comp",
-            "schema_columns": ["bonus", "salary"],
+            "table_name": "employees",
+            "schema": [
+                {
+                    "name": "bonus",
+                    "type": "FLOAT",
+                    "nullable": True,
+                    "source": "syngen",
+                },
+                {
+                    "name": "salary",
+                    "type": "FLOAT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "total_comp",
+                    "type": "FLOAT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": 'coalesce(col("bonus"), 0) + col("salary")',
+                    "source_type": "domain_specific_language",
+                },
+            ],
         },
     )
     assert parse_response.status_code == 200
@@ -75,9 +94,31 @@ def test_natural_language_parse_uses_heuristics(client) -> None:
     response = client.post(
         "/rules/parse",
         json={
-            "source_text": "If job_level is 5 or higher, set bonus to 10 percent of salary.",
-            "source_type": "natural_language",
-            "schema_columns": ["salary", "job_level", "bonus"],
+            "table_name": "employees",
+            "schema": [
+                {
+                    "name": "salary",
+                    "type": "FLOAT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "job_level",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "bonus",
+                    "type": "FLOAT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": (
+                        "If job_level is 5 or higher, set bonus to 10 percent of salary."
+                    ),
+                    "source_type": "natural_language",
+                },
+            ],
         },
     )
 
@@ -87,6 +128,8 @@ def test_natural_language_parse_uses_heuristics(client) -> None:
     assert body["dsl_candidate"] == "0.1 * col('salary') if col('job_level') >= 5 else 0"
     assert set(body["dependencies"]) == {"salary", "job_level"}
     assert body["prompt_audit"]["backend"] == "stub"
+    assert len(body["prompt_audits"]) == 1
+    assert body["metrics"]["attempts"] == 1
 
 
 def test_generate_dataset_flow(client) -> None:
@@ -94,17 +137,32 @@ def test_generate_dataset_flow(client) -> None:
         "/datasets/generate",
         json={
             "row_count": 3,
-            "schema_columns": ["order_id", "line_amount", "order_total"],
             "base_rows": [
                 {"order_id": "A", "line_amount": 10},
                 {"order_id": "A", "line_amount": 5},
                 {"order_id": "B", "line_amount": 7},
             ],
-            "rules": [
+            "schema": [
                 {
-                    "target_column": "order_total",
-                    "expression": 'group_sum(key=col("order_id"), value=col("line_amount"))',
-                }
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "line_amount",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "order_total",
+                    "type": "INT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": 'group_sum(key=col("order_id"), value=col("line_amount"))',
+                    "source_type": "domain_specific_language",
+                },
             ],
             "seed": 17,
         },
@@ -124,3 +182,51 @@ def test_generate_dataset_flow(client) -> None:
     output_path = Path(job_body["result"]["output_path"])
     rows = json.loads(output_path.read_text(encoding="utf-8"))
     assert [row["order_total"] for row in rows] == [15, 15, 7]
+
+
+def test_generate_dataset_with_natural_language_rule_returns_llm_metrics(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "row_count": 2,
+            "base_rows": [
+                {"salary": 100, "job_level": 4},
+                {"salary": 100, "job_level": 6},
+            ],
+            "schema": [
+                {
+                    "name": "salary",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "job_level",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "bonus",
+                    "type": "FLOAT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": (
+                        "If job_level is 5 or higher, set bonus to 10 percent of salary."
+                    ),
+                    "source_type": "natural_language",
+                },
+            ],
+            "seed": 11,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["llm_metrics"]["attempts"] == 1
+
+    job_response = client.get(f"/jobs/{body['job_id']}")
+    assert job_response.status_code == 200
+    job_body = job_response.json()
+    assert job_body["llm_metrics"]["attempts"] == 1

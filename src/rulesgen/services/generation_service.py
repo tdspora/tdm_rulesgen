@@ -8,6 +8,7 @@ from rulesgen.domain.models import (
     ColumnSource,
     CompiledRule,
     JobKind,
+    NaturalLanguageRuleRequest,
     SandboxExecutionResult,
     SourceType,
 )
@@ -31,6 +32,34 @@ class GenerationService:
     def build_plan(self, request: DatasetGenerationRequest) -> DatasetGenerationPlan:
         base_rows = self._materialize_rows(request)
         planned_rules: list[PlannedRule] = []
+        effective_schema_columns = self._effective_schema_columns(request)
+        nl_frames_by_target = {}
+        llm_metrics = None
+
+        nl_drafts = [
+            draft
+            for draft in request.rules
+            if draft.source_type is SourceType.NATURAL_LANGUAGE and draft.source_text is not None
+        ]
+        if nl_drafts:
+            batch = self.compiler.parse_batch(
+                table_name=request.table_name,
+                schema=request.schema,
+                schema_columns=effective_schema_columns,
+                rules=[
+                    NaturalLanguageRuleRequest(
+                        target_column=draft.target_column,
+                        source_text=draft.source_text or "",
+                    )
+                    for draft in nl_drafts
+                ],
+            )
+            nl_frames_by_target = {
+                frame.target_column: frame
+                for frame in batch.frames
+                if frame.target_column is not None
+            }
+            llm_metrics = batch.metrics
 
         for draft in request.rules:
             compiled_rule = self._resolve_rule(
@@ -39,7 +68,7 @@ class GenerationService:
                 source_text=draft.source_text,
                 expression=draft.expression,
                 artifact_id=draft.artifact_id,
-                schema_columns=request.schema_columns,
+                nl_frames_by_target=nl_frames_by_target,
             )
             source = (
                 ColumnSource.HYBRID
@@ -54,16 +83,21 @@ class GenerationService:
                 )
             )
 
-        column_sources = {column: ColumnSource.MODEL_GENERATED for column in request.schema_columns}
+        column_sources = {
+            column: ColumnSource.MODEL_GENERATED for column in effective_schema_columns
+        }
         for planned_rule in planned_rules:
             column_sources[planned_rule.target_column] = planned_rule.source
 
         return DatasetGenerationPlan(
             row_count=len(base_rows),
-            schema_columns=request.schema_columns,
+            table_name=request.table_name,
+            schema=request.schema,
+            schema_columns=effective_schema_columns,
             planned_rules=planned_rules,
             column_sources=column_sources,
             seed=request.seed,
+            llm_metrics=llm_metrics,
         )
 
     def generate(
@@ -98,7 +132,7 @@ class GenerationService:
         source_text: str | None,
         expression: str | None,
         artifact_id: str | None,
-        schema_columns: list[str],
+        nl_frames_by_target: dict[str, Any],
     ) -> CompiledRule:
         if artifact_id is not None:
             return self.rule_repository.get(artifact_id)
@@ -112,15 +146,14 @@ class GenerationService:
             return self.rule_repository.save(compiled_rule)
 
         if source_type is SourceType.NATURAL_LANGUAGE and source_text is not None:
-            frame = self.compiler.parse(
-                source_text=source_text,
-                source_type=source_type,
-                target_column=target_column,
-                schema_columns=schema_columns,
-            )
+            frame = nl_frames_by_target.get(target_column)
+            if frame is None:
+                raise ValidationFailed(
+                    f"Natural-language rule for {target_column!r} did not produce a frame."
+                )
             if frame.dsl_candidate is None:
                 raise ValidationFailed(
-                    f"Natural-language rule for {target_column!r} did not produce a DSL candidate."
+                    self._missing_dsl_message(target_column, frame.diagnostics)
                 )
             compiled_rule = self.compiler.compile(
                 expression=frame.dsl_candidate,
@@ -147,3 +180,19 @@ class GenerationService:
         if request.row_count < 1:
             raise ValidationFailed("row_count must be at least 1.")
         return [{} for _ in range(request.row_count)]
+
+    def _effective_schema_columns(self, request: DatasetGenerationRequest) -> list[str]:
+        if request.schema_columns:
+            return list(request.schema_columns)
+        return [column.name for column in request.schema]
+
+    def _missing_dsl_message(self, target_column: str, diagnostics: list[Any]) -> str:
+        if not diagnostics:
+            return f"Natural-language rule for {target_column!r} did not produce a DSL candidate."
+        joined = "; ".join(
+            str(getattr(diagnostic, "message", diagnostic)) for diagnostic in diagnostics
+        )
+        return (
+            f"Natural-language rule for {target_column!r} did not produce a DSL candidate: "
+            f"{joined}"
+        )

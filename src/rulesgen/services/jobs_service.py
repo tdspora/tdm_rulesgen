@@ -4,7 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 from rulesgen.domain.generation import DatasetGenerationRequest, RuleDraft
-from rulesgen.domain.models import JobKind, JobRecord, JobStatus, utc_now
+from rulesgen.domain.models import JobKind, JobRecord, JobStatus, SchemaColumnDefinition, utc_now
 from rulesgen.domain.repositories import JobRepository
 from rulesgen.errors import ValidationFailed
 from rulesgen.services.generation_service import GenerationService
@@ -33,6 +33,8 @@ class JobsService:
         row: dict[str, Any],
         seed: int,
         references: dict[str, list[Any]],
+        table_name: str | None,
+        schema: list[SchemaColumnDefinition],
         schema_columns: list[str],
         row_count: int | None,
         base_rows: list[dict[str, Any]],
@@ -52,6 +54,17 @@ class JobsService:
                 "row": row,
                 "seed": seed,
                 "references": references,
+                "table_name": table_name,
+                "schema": [
+                    {
+                        "name": item.name,
+                        "data_type": item.data_type,
+                        "nullable": item.nullable,
+                        "source": item.source.value,
+                        "notes": item.notes,
+                    }
+                    for item in schema
+                ],
                 "schema_columns": schema_columns,
                 "row_count": row_count,
                 "base_rows": base_rows,
@@ -78,6 +91,8 @@ class JobsService:
                 row=row,
                 seed=seed,
                 references=references,
+                table_name=table_name,
+                schema=schema,
                 schema_columns=schema_columns,
                 row_count=row_count,
                 base_rows=base_rows,
@@ -104,6 +119,8 @@ class JobsService:
         row: dict[str, Any],
         seed: int,
         references: dict[str, list[Any]],
+        table_name: str | None,
+        schema: list[SchemaColumnDefinition],
         schema_columns: list[str],
         row_count: int | None,
         base_rows: list[dict[str, Any]],
@@ -155,6 +172,8 @@ class JobsService:
             request = DatasetGenerationRequest(
                 row_count=effective_row_count,
                 rules=rules,
+                table_name=table_name,
+                schema=schema,
                 schema_columns=schema_columns,
                 base_rows=base_rows,
                 references=references,
@@ -177,6 +196,7 @@ class JobsService:
             }
             job.diagnostics = sandbox_result.diagnostics
             job.artifacts = sandbox_result.artifacts
+            job.llm_metrics = plan.llm_metrics
             return
 
         raise ValidationFailed(f"Unsupported job kind: {job.kind.value}")

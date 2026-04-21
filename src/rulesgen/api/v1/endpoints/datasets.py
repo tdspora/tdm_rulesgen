@@ -5,8 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from rulesgen.api.dependencies import get_current_principal, get_jobs_service
+from rulesgen.api.model_mapping import (
+    to_domain_rule_drafts,
+    to_domain_rule_drafts_from_schema,
+    to_domain_schema,
+    to_llm_metrics_schema,
+)
 from rulesgen.auth.models import Principal
-from rulesgen.domain.generation import RuleDraft
 from rulesgen.domain.models import JobKind
 from rulesgen.schemas.datasets import GenerateDatasetRequest, GenerateDatasetResponse
 from rulesgen.schemas.rules import DiagnosticSchema
@@ -30,19 +35,13 @@ def generate_dataset(
         row={},
         seed=payload.seed,
         references=payload.references,
+        table_name=payload.table_name,
+        schema=to_domain_schema(payload.schema_),
         schema_columns=payload.schema_columns,
         row_count=payload.row_count,
         base_rows=payload.base_rows,
-        rules=[
-            RuleDraft(
-                target_column=item.target_column,
-                source_type=item.source_type,
-                source_text=item.source_text,
-                expression=item.expression,
-                artifact_id=item.artifact_id,
-            )
-            for item in payload.rules
-        ],
+        rules=to_domain_rule_drafts(payload.rules)
+        + to_domain_rule_drafts_from_schema(payload.schema_),
     )
 
     planned_column_sources = {}
@@ -65,4 +64,5 @@ def generate_dataset(
             )
             for item in job.diagnostics
         ],
+        llm_metrics=to_llm_metrics_schema(job.llm_metrics),
     )

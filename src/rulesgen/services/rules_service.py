@@ -7,6 +7,7 @@ from rulesgen.domain.models import (
     CompiledRule,
     ExecutionPreview,
     ExplainabilityTrace,
+    SchemaColumnDefinition,
     SemanticFrame,
     SourceType,
 )
@@ -33,12 +34,16 @@ class RulesService:
         source_type: SourceType,
         target_column: str | None,
         schema_columns: list[str],
+        table_name: str | None = None,
+        schema: list[SchemaColumnDefinition] | None = None,
     ) -> SemanticFrame:
         return self.compiler.parse(
             source_text=source_text,
             source_type=source_type,
             target_column=target_column,
             schema_columns=schema_columns,
+            table_name=table_name,
+            schema=schema,
         )
 
     def compile(
