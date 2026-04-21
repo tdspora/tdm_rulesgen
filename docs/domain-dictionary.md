@@ -71,7 +71,8 @@ These helper names are part of the current DSL/runtime contract and should be tr
 - `row-phase helper`: a helper that can be evaluated from one row plus runtime context. Examples: `col`, `coalesce`, `faker`, `fk`.
 - `group-phase helper`: a helper that requires multi-row context, such as `group_sum` and `group_count`.
 - `local preview executor`: the current adapter in `src/rulesgen/execution/local.py`. It supports row-phase helpers but intentionally rejects aggregate helpers during preview.
-- `OpenSandbox execution adapter`: the subprocess-backed adapter in `src/rulesgen/execution/opensandbox.py` that stages manifests and outputs under the local OSSFS root for full dataset generation.
+- `subprocess dataset executor`: the default adapter in `src/rulesgen/execution/opensandbox.py`. It stages manifests and outputs under the local OSSFS root and runs the shared runner module in a child Python process. This preserves current behavior but is not a full isolation boundary.
+- `Alibaba OpenSandbox adapter`: the optional adapter in `src/rulesgen/execution/alibaba_opensandbox.py` that uploads the same manifest contract into an OpenSandbox-managed container and downloads the generated dataset back into local OSSFS-backed storage.
 - `seed`: the deterministic input used to initialize runtime randomness and Faker output.
 - `references`: external value pools used for helpers such as `fk("table.column")`.
 - `column_source`: how a dataset column is produced during generation. Current values are `model_generated`, `rule_generated`, and `hybrid`.
@@ -108,6 +109,7 @@ These terms matter for future work even where the current code only implements p
 - Say `validated AST` or `compiled rule artifact`, not `eval'd user code`.
 - Say `LLM-translated DSL candidate` or `LLM-produced semantic frame` when describing the NL translation stage.
 - Say `preview executor` for the current local runtime.
-- Say `OpenSandbox execution adapter` for the subprocess-backed isolated execution path.
+- Say `subprocess dataset executor` for the default local dataset-generation path.
+- Say `Alibaba OpenSandbox adapter` for the optional remote dataset-generation backend.
 - Say `aggregate helpers are planned but not supported in local preview` when discussing `group_sum` and `group_count`.
 - Update this file when adding a new core runtime helper, intent, pipeline stage, or architectural term.

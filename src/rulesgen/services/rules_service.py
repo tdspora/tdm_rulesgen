@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from rulesgen.compiler.service import RuleCompilerService
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.models import (
     CompiledRule,
     ExecutionPreview,
@@ -12,6 +11,7 @@ from rulesgen.domain.models import (
     SourceType,
 )
 from rulesgen.domain.repositories import RuleRepository
+from rulesgen.errors import ValidationFailed
 from rulesgen.execution.local import LocalExecutionAdapter
 
 

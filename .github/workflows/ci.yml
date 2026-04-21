@@ -25,7 +25,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --extra dev --locked
+        run: uv sync --extra api --extra dev --locked
 
       - name: Ruff
         run: |
@@ -37,6 +37,9 @@ jobs:
 
       - name: Pytest
         run: uv run pytest
+
+      - name: Build distributions
+        run: uv build
 
       - name: Pip audit
         run: uv run pip-audit
@@ -76,6 +79,14 @@ jobs:
         run: uv sync --locked
 
       - name: Semantic release
+        id: semantic-release
         uses: python-semantic-release/python-semantic-release@v10.2.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        if: steps.semantic-release.outputs.released == 'true'
+        uses: python-semantic-release/publish-action@v10.2.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.semantic-release.outputs.tag }}

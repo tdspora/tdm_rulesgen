@@ -7,15 +7,34 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"
+QUICK_START_BACKEND="${QUICK_START_BACKEND:-opensandbox}"
 READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-30}"
-POLL_ATTEMPTS="${POLL_ATTEMPTS:-10}"
+POLL_ATTEMPTS="${POLL_ATTEMPTS:-30}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-1}"
 SKIP_UV_SYNC="${SKIP_UV_SYNC:-0}"
 KEEP_TEMP="${KEEP_TEMP:-0}"
+KEEP_DOCKER="${KEEP_DOCKER:-0}"
+START_OPENSANDBOX_SERVER="${START_OPENSANDBOX_SERVER:-1}"
+BUILD_OPENSANDBOX_IMAGE="${BUILD_OPENSANDBOX_IMAGE:-1}"
+
+OPENSANDBOX_HOST="${OPENSANDBOX_HOST:-127.0.0.1}"
+OPENSANDBOX_PORT="${OPENSANDBOX_PORT:-8090}"
+OPENSANDBOX_BASE_URL="${OPENSANDBOX_BASE_URL:-http://${OPENSANDBOX_HOST}:${OPENSANDBOX_PORT}}"
+OPENSANDBOX_DOMAIN="${OPENSANDBOX_DOMAIN:-${OPENSANDBOX_HOST}:${OPENSANDBOX_PORT}}"
+OPENSANDBOX_PROTOCOL="${OPENSANDBOX_PROTOCOL:-http}"
+OPENSANDBOX_API_KEY="${OPENSANDBOX_API_KEY:-}"
+OPENSANDBOX_REQUEST_TIMEOUT_SECONDS="${OPENSANDBOX_REQUEST_TIMEOUT_SECONDS:-30}"
+OPENSANDBOX_USE_SERVER_PROXY="${OPENSANDBOX_USE_SERVER_PROXY:-false}"
+OPENSANDBOX_IMAGE="${OPENSANDBOX_IMAGE:-rulesgen:local}"
+OPENSANDBOX_TTL_SECONDS="${OPENSANDBOX_TTL_SECONDS:-600}"
+OPENSANDBOX_READY_TIMEOUT_SECONDS="${OPENSANDBOX_READY_TIMEOUT_SECONDS:-30}"
+OPENSANDBOX_WORKSPACE_DIR="${OPENSANDBOX_WORKSPACE_DIR:-/tmp/rulesgen-opensandbox}"
+OPENSANDBOX_HEALTH_TIMEOUT_SECONDS="${OPENSANDBOX_HEALTH_TIMEOUT_SECONDS:-60}"
 
 TMP_DIR=$(mktemp -d)
 SERVER_LOG="$TMP_DIR/uvicorn.log"
 SERVER_PID=""
+OPENSANDBOX_SERVER_STARTED=0
 
 log() {
   printf '\n==> %s\n' "$*"
@@ -30,6 +49,13 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
 
+run_opensandbox_compose() {
+  (
+    cd "$REPO_ROOT"
+    docker compose -f compose.yaml -f compose.opensandbox.yaml "$@"
+  )
+}
+
 cleanup() {
   local exit_code=$?
 
@@ -38,13 +64,24 @@ cleanup() {
     wait "$SERVER_PID" 2>/dev/null || true
   fi
 
+  if [[ "$OPENSANDBOX_SERVER_STARTED" == "1" ]] && [[ "$KEEP_DOCKER" != "1" ]]; then
+    run_opensandbox_compose stop opensandbox-server >/dev/null 2>&1 || true
+  fi
+
   if [[ "$KEEP_TEMP" == "1" ]]; then
     printf '\nTemp files kept at %s\n' "$TMP_DIR"
     if [[ -n "$SERVER_PID" ]]; then
       printf 'Server log: %s\n' "$SERVER_LOG"
     fi
+    if [[ "$OPENSANDBOX_SERVER_STARTED" == "1" ]]; then
+      printf 'OpenSandbox server: %s\n' "$OPENSANDBOX_BASE_URL"
+    fi
   else
     rm -rf "$TMP_DIR"
+  fi
+
+  if [[ "$OPENSANDBOX_SERVER_STARTED" == "1" ]] && [[ "$KEEP_DOCKER" == "1" ]]; then
+    printf '\nOpenSandbox server left running at %s\n' "$OPENSANDBOX_BASE_URL"
   fi
 
   exit "$exit_code"
@@ -112,6 +149,10 @@ is_service_ready() {
   curl -fsS "$BASE_URL/health/ready" >/dev/null 2>&1
 }
 
+is_opensandbox_ready() {
+  curl -fsS "$OPENSANDBOX_BASE_URL/health" >/dev/null 2>&1
+}
+
 wait_for_ready() {
   local deadline=$((SECONDS + READY_TIMEOUT_SECONDS))
 
@@ -134,24 +175,90 @@ wait_for_ready() {
   return 1
 }
 
+wait_for_opensandbox_ready() {
+  local deadline=$((SECONDS + OPENSANDBOX_HEALTH_TIMEOUT_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    if is_opensandbox_ready; then
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  printf 'Timed out waiting for %s/health\n' "$OPENSANDBOX_BASE_URL" >&2
+  run_opensandbox_compose logs --no-color --tail=200 opensandbox-server >&2 || true
+  return 1
+}
+
+ensure_opensandbox_image() {
+  if [[ "$BUILD_OPENSANDBOX_IMAGE" == "1" ]]; then
+    log "Building Docker image $OPENSANDBOX_IMAGE for OpenSandbox jobs"
+    (
+      cd "$REPO_ROOT"
+      docker build -t "$OPENSANDBOX_IMAGE" .
+    )
+    return 0
+  fi
+
+  docker image inspect "$OPENSANDBOX_IMAGE" >/dev/null 2>&1 || die \
+    "Missing Docker image: $OPENSANDBOX_IMAGE"
+}
+
+start_opensandbox_server_if_needed() {
+  if [[ "$QUICK_START_BACKEND" != "opensandbox" ]]; then
+    return 0
+  fi
+
+  if is_opensandbox_ready; then
+    log "Reusing OpenSandbox server at $OPENSANDBOX_BASE_URL"
+    return 0
+  fi
+
+  if [[ "$START_OPENSANDBOX_SERVER" != "1" ]]; then
+    die "OpenSandbox server is not ready at $OPENSANDBOX_BASE_URL"
+  fi
+
+  log "Starting OpenSandbox server at $OPENSANDBOX_BASE_URL"
+  run_opensandbox_compose up -d opensandbox-server
+  OPENSANDBOX_SERVER_STARTED=1
+  wait_for_opensandbox_ready
+}
+
 start_service_if_needed() {
   if is_service_ready; then
-    log "Reusing running service at $BASE_URL"
+    log "Reusing running service at $BASE_URL; backend is controlled by that process"
     return 0
   fi
 
   if [[ "$SKIP_UV_SYNC" != "1" ]]; then
-    log "Installing dependencies with uv sync --extra dev"
+    log "Installing dependencies with uv sync --extra api --extra dev"
     (
       cd "$REPO_ROOT"
-      uv sync --extra dev
+      uv sync --extra api --extra dev
     )
   fi
 
-  log "Starting rulesgen on $BASE_URL"
+  local -a service_env=("RULESGEN_SANDBOX_BACKEND=$QUICK_START_BACKEND")
+  if [[ "$QUICK_START_BACKEND" == "opensandbox" ]]; then
+    service_env+=(
+      "RULESGEN_OPENSANDBOX_DOMAIN=$OPENSANDBOX_DOMAIN"
+      "RULESGEN_OPENSANDBOX_PROTOCOL=$OPENSANDBOX_PROTOCOL"
+      "RULESGEN_OPENSANDBOX_API_KEY=$OPENSANDBOX_API_KEY"
+      "RULESGEN_OPENSANDBOX_REQUEST_TIMEOUT_SECONDS=$OPENSANDBOX_REQUEST_TIMEOUT_SECONDS"
+      "RULESGEN_OPENSANDBOX_USE_SERVER_PROXY=$OPENSANDBOX_USE_SERVER_PROXY"
+      "RULESGEN_OPENSANDBOX_IMAGE=$OPENSANDBOX_IMAGE"
+      "RULESGEN_OPENSANDBOX_TTL_SECONDS=$OPENSANDBOX_TTL_SECONDS"
+      "RULESGEN_OPENSANDBOX_READY_TIMEOUT_SECONDS=$OPENSANDBOX_READY_TIMEOUT_SECONDS"
+      "RULESGEN_OPENSANDBOX_WORKSPACE_DIR=$OPENSANDBOX_WORKSPACE_DIR"
+    )
+  fi
+
+  log "Starting rulesgen on $BASE_URL with sandbox backend $QUICK_START_BACKEND"
   (
     cd "$REPO_ROOT"
-    exec uv run uvicorn rulesgen.main:app --host "$HOST" --port "$PORT"
+    exec env "${service_env[@]}" \
+      uv run uvicorn rulesgen.main:app --host "$HOST" --port "$PORT"
   ) >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
 
@@ -180,7 +287,31 @@ main() {
   require_command python3
   require_command uv
 
+  case "$QUICK_START_BACKEND" in
+    subprocess|opensandbox)
+      ;;
+    *)
+      die "QUICK_START_BACKEND must be 'subprocess' or 'opensandbox'"
+      ;;
+  esac
+
+  log "Quick start backend: $QUICK_START_BACKEND"
+
+  if [[ "$QUICK_START_BACKEND" == "opensandbox" ]]; then
+    require_command docker
+    docker compose version >/dev/null 2>&1 || die "Missing required command: docker compose"
+    ensure_opensandbox_image
+    start_opensandbox_server_if_needed
+  fi
+
   start_service_if_needed
+
+  if [[ "$QUICK_START_BACKEND" == "opensandbox" ]]; then
+    local opensandbox_health_response="$TMP_DIR/opensandbox-health.json"
+    log "OpenSandbox health check"
+    request_json GET "$OPENSANDBOX_BASE_URL/health" "$opensandbox_health_response"
+    print_json "$opensandbox_health_response"
+  fi
 
   local ready_response="$TMP_DIR/ready-response.json"
   local parse_request="$TMP_DIR/parse-request.json"
@@ -196,6 +327,7 @@ main() {
   local artifact_id
   local job_id
   local job_status=""
+  local job_error=""
   local output_path=""
 
   log "Health check"
@@ -278,6 +410,10 @@ JSON
   fi
 
   print_json "$job_response"
+  job_error=$(json_get "$job_response" "error")
+  if [[ "$job_status" != "succeeded" ]]; then
+    die "Job $job_id finished with status $job_status: $job_error"
+  fi
   output_path=$(json_get "$job_response" "result.output_path")
 
   if [[ -n "$output_path" && -f "$output_path" ]]; then

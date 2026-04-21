@@ -8,8 +8,8 @@ from typing import Any
 from rulesgen.compiler.parser import parse_expression
 from rulesgen.compiler.runtime_spec import RuntimeContext, build_runtime_locals
 from rulesgen.compiler.validator import DSLValidator
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.models import ColumnSource, CompiledRule, Diagnostic, HelperPhase
+from rulesgen.errors import ValidationFailed
 
 
 @dataclass(slots=True)

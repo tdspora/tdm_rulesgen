@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.models import CompiledRule, Diagnostic, DiagnosticLevel, ExecutionPreview
+from rulesgen.errors import ValidationFailed
 from rulesgen.execution.engine import execute_preview_rule
 
 

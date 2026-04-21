@@ -5,9 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from rulesgen.api.exception_handlers import install_exception_handlers
 from rulesgen.api.router import api_router
 from rulesgen.core.config import Settings, get_settings
-from rulesgen.core.errors import install_exception_handlers
 from rulesgen.core.lifespan import lifespan
 from rulesgen.core.logging import configure_logging
 from rulesgen.middleware.exception_mapping import ExceptionMappingMiddleware

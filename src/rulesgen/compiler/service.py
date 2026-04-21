@@ -6,7 +6,6 @@ from rulesgen.compiler.parser import parse_expression
 from rulesgen.compiler.types import ValidatedExpression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.core.config import Settings
-from rulesgen.core.errors import DSLParseFailed, DSLValidationFailed
 from rulesgen.domain.models import (
     CompiledRule,
     Diagnostic,
@@ -16,6 +15,7 @@ from rulesgen.domain.models import (
     SemanticFrame,
     SourceType,
 )
+from rulesgen.errors import DSLParseFailed, DSLValidationFailed
 from rulesgen.infra.llm_gateway import LLMGatewayClient
 
 

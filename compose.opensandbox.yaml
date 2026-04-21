@@ -1,0 +1,23 @@
+services:
+  rulesgen:
+    depends_on:
+      - opensandbox-server
+    environment:
+      RULESGEN_SANDBOX_BACKEND: opensandbox
+      RULESGEN_OPENSANDBOX_DOMAIN: opensandbox-server:8090
+      RULESGEN_OPENSANDBOX_PROTOCOL: http
+      RULESGEN_OPENSANDBOX_USE_SERVER_PROXY: "true"
+      RULESGEN_OPENSANDBOX_IMAGE: rulesgen:local
+      RULESGEN_OPENSANDBOX_TTL_SECONDS: "600"
+      RULESGEN_OPENSANDBOX_READY_TIMEOUT_SECONDS: "30"
+      RULESGEN_OPENSANDBOX_WORKSPACE_DIR: /tmp/rulesgen-opensandbox
+
+  opensandbox-server:
+    image: opensandbox/server:latest
+    ports:
+      - "8090:8090"
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/opensandbox/config.toml:/etc/opensandbox/config.toml:ro

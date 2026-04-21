@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from rulesgen.core.errors import ValidationFailed
+from rulesgen.errors import ValidationFailed
 
 
 class LocalOssfsStore:

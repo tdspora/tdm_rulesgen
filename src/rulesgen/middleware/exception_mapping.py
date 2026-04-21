@@ -6,7 +6,7 @@ from http import HTTPStatus
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from rulesgen.core.problem_details import problem_response
+from rulesgen.api.problem_details import problem_response
 
 logger = logging.getLogger("rulesgen.errors")
 

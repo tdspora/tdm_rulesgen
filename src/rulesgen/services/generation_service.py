@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from rulesgen.compiler.service import RuleCompilerService
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.generation import DatasetGenerationPlan, DatasetGenerationRequest, PlannedRule
 from rulesgen.domain.models import (
     ColumnSource,
@@ -13,7 +12,8 @@ from rulesgen.domain.models import (
     SourceType,
 )
 from rulesgen.domain.repositories import RuleRepository
-from rulesgen.execution.opensandbox import OpenSandboxExecutionAdapter
+from rulesgen.errors import ValidationFailed
+from rulesgen.execution.interfaces import DatasetSandboxExecutor
 
 
 class GenerationService:
@@ -22,7 +22,7 @@ class GenerationService:
         *,
         compiler: RuleCompilerService,
         rule_repository: RuleRepository,
-        sandbox_adapter: OpenSandboxExecutionAdapter,
+        sandbox_adapter: DatasetSandboxExecutor,
     ) -> None:
         self.compiler = compiler
         self.rule_repository = rule_repository
