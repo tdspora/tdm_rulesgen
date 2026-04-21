@@ -3,8 +3,8 @@ from __future__ import annotations
 import ast
 
 from rulesgen.compiler.types import ValidatedExpression
-from rulesgen.core.errors import DSLValidationFailed
 from rulesgen.domain.models import AggregateHelperSpec, Diagnostic, DiagnosticLevel, HelperPhase
+from rulesgen.errors import DSLValidationFailed
 
 ALLOWED_CALLS = {
     "choice",

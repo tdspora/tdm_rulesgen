@@ -1,7 +1,8 @@
 # rulesgen
 
-`rulesgen` is a FastAPI/Starlette/Uvicorn service for safe rule parsing,
-compilation, local preview execution, and sandbox-backed dataset generation.
+`rulesgen` is a Python library for safe rule parsing, compilation, local preview
+execution, and sandbox-backed dataset generation, with an optional
+FastAPI/Starlette/Uvicorn application layered on top.
 
 ## What is included
 
@@ -12,6 +13,64 @@ compilation, local preview execution, and sandbox-backed dataset generation.
 - Filesystem-backed repositories for rules, jobs, prompt audits, and artifacts
 - A local preview executor, a default subprocess dataset executor, and an optional Alibaba OpenSandbox adapter for full dataset generation
 - Tests, CI, and a container build baseline
+
+## Install
+
+Use the package as a library:
+
+```bash
+pip install rulesgen
+```
+
+Install the optional API layer:
+
+```bash
+pip install "rulesgen[api]"
+```
+
+For local development in this repository:
+
+```bash
+uv sync --extra api --extra dev
+```
+
+## Release automation
+
+Pushes to `main` run the CI checks, build the wheel and sdist, and attach those
+artifacts to the GitHub Release created by semantic-release.
+
+Before the first automated release, create a baseline tag that matches
+`project.version` in `pyproject.toml`, for example:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+If branch protection requires pull requests on `main`, allow the GitHub Actions
+app to bypass that requirement so semantic-release can push its version bump
+commit and the release job can attach wheel/sdist assets to the generated
+GitHub Release. [`scripts/configure-github-repo-oss.sh`](scripts/configure-github-repo-oss.sh)
+applies the recommended repository and branch-protection settings and prints
+the one manual UI step needed to enable the GitHub Actions bypass.
+
+## Library quick start
+
+```python
+from rulesgen import compile_rule, preview_rule
+
+compiled_rule = compile_rule(
+    'coalesce(col("bonus"), 0) + col("salary")',
+    target_column="total_comp",
+)
+preview = preview_rule(
+    compiled_rule,
+    row={"salary": 120000, "bonus": 5000},
+    seed=99,
+)
+
+print(preview.value)
+```
 
 ## Quick start
 
@@ -44,13 +103,14 @@ QUICK_START_BACKEND=subprocess ./scripts/quick_start.sh
 Local subprocess dataset executor:
 
 ```bash
-uv sync --extra dev
+uv sync --extra api --extra dev
 uv run uvicorn rulesgen.main:app --reload
 ```
 
 OpenSandbox-backed dataset generation:
 
 ```bash
+uv sync --extra api --extra dev
 docker build -t rulesgen:local .
 docker compose -f compose.yaml -f compose.opensandbox.yaml up --build -d opensandbox-server
 RULESGEN_SANDBOX_BACKEND=opensandbox \
@@ -203,6 +263,7 @@ back into the local OSSFS root.
 ## Useful commands
 
 ```bash
+uv sync --extra api --extra dev
 uv run pytest
 uv run ruff check .
 uv run ruff format .

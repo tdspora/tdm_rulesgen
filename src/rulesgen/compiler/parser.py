@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import ast
 
-from rulesgen.core.errors import DSLParseFailed
 from rulesgen.domain.models import Diagnostic, DiagnosticLevel
+from rulesgen.errors import DSLParseFailed
 
 
 def parse_expression(expression: str, *, max_length: int) -> ast.Expression:

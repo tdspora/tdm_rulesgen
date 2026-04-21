@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "rulesgen"
 version = "0.1.0"
-description = "Rulesgen REST API foundation for safe rule parsing and execution."
+description = "Rulesgen library with an optional FastAPI app for safe rule parsing and execution."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
@@ -16,8 +16,6 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "fastapi",
-  "uvicorn[standard]",
   "pydantic>=2",
   "pydantic-settings",
   "httpx",
@@ -26,6 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+  "fastapi",
+  "uvicorn[standard]",
+]
 dev = [
   "mypy",
   "pip-audit",

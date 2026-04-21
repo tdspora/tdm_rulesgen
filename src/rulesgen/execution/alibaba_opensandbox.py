@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
 import shlex
+import socket
+from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from opensandbox import SandboxSync
@@ -17,7 +18,6 @@ from opensandbox.exceptions import SandboxException
 from opensandbox.models.execd import Execution, RunCommandOpts
 from opensandbox.models.filesystem import WriteEntry
 
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.models import (
     ArtifactKind,
     CompiledRule,
@@ -27,6 +27,7 @@ from rulesgen.domain.models import (
     SandboxExecutionResult,
 )
 from rulesgen.domain.repositories import ArtifactRepository
+from rulesgen.errors import ValidationFailed
 from rulesgen.execution.opensandbox import serialize_compiled_rule
 from rulesgen.infra.ossfs import LocalOssfsStore
 
@@ -329,7 +330,7 @@ class AlibabaOpenSandboxExecutionAdapter:
         )
 
     @contextmanager
-    def _network_resolution_context(self):
+    def _network_resolution_context(self) -> Iterator[None]:
         if self.opensandbox_use_server_proxy or not self._uses_local_server_domain():
             with nullcontext():
                 yield
@@ -337,12 +338,12 @@ class AlibabaOpenSandboxExecutionAdapter:
 
         original_getaddrinfo = socket.getaddrinfo
 
-        def patched_getaddrinfo(host: str, *args: Any, **kwargs: Any):
+        def patched_getaddrinfo(host: str, *args: Any, **kwargs: Any) -> Any:
             if host == "host.docker.internal":
                 host = "127.0.0.1"
             return original_getaddrinfo(host, *args, **kwargs)
 
-        socket.getaddrinfo = patched_getaddrinfo
+        socket.getaddrinfo = cast(Any, patched_getaddrinfo)
         try:
             yield
         finally:
@@ -447,8 +448,7 @@ class AlibabaOpenSandboxExecutionAdapter:
             return {
                 "success": False,
                 "error": (
-                    "OpenSandbox output download failed: "
-                    f"{self._format_sandbox_exception(exc)}"
+                    f"OpenSandbox output download failed: {self._format_sandbox_exception(exc)}"
                 ),
             }
 

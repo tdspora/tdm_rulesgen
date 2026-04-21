@@ -9,10 +9,10 @@ from opensandbox.config import ConnectionConfigSync
 from opensandbox.exceptions import SandboxException
 from opensandbox.models.execd import Execution
 
+from rulesgen import build_container
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings, get_settings
-from rulesgen.core.errors import ValidationFailed
-from rulesgen.core.lifespan import build_container
+from rulesgen.errors import ValidationFailed
 from rulesgen.execution.alibaba_opensandbox import AlibabaOpenSandboxExecutionAdapter
 from rulesgen.execution.opensandbox import SubprocessSandboxExecutionAdapter
 from rulesgen.infra.llm_gateway import StubLLMGatewayClient

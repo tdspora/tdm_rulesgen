@@ -232,10 +232,10 @@ start_service_if_needed() {
   fi
 
   if [[ "$SKIP_UV_SYNC" != "1" ]]; then
-    log "Installing dependencies with uv sync --extra dev"
+    log "Installing dependencies with uv sync --extra api --extra dev"
     (
       cd "$REPO_ROOT"
-      uv sync --extra dev
+      uv sync --extra api --extra dev
     )
   fi
 

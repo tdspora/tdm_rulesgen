@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.models import (
     ArtifactKind,
     CompiledRule,
@@ -18,6 +17,7 @@ from rulesgen.domain.models import (
     SandboxExecutionResult,
 )
 from rulesgen.domain.repositories import ArtifactRepository
+from rulesgen.errors import ValidationFailed
 from rulesgen.infra.ossfs import LocalOssfsStore
 
 

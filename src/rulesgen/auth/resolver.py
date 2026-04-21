@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from rulesgen.auth.base import AuthBackend
 from rulesgen.auth.models import AuthContext, Principal
-from rulesgen.core.errors import Unauthorized
+from rulesgen.errors import Unauthorized
 
 
 class AuthResolver:

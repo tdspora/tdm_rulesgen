@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-from rulesgen.core.config import get_settings
+if TYPE_CHECKING:
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
 
 
 def build_problem_details(
@@ -17,19 +16,16 @@ def build_problem_details(
     detail: str,
     errors: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    settings = get_settings()
-    body: dict[str, Any] = {
-        "type": f"{settings.problem_base_url.rstrip('/')}/{code}",
-        "title": title,
-        "status": status_code,
-        "detail": detail,
-        "instance": str(request.url.path),
-        "code": code,
-        "request_id": getattr(request.state, "request_id", None),
-    }
-    if errors:
-        body["errors"] = errors
-    return body
+    from rulesgen.api.problem_details import build_problem_details as _build_problem_details
+
+    return _build_problem_details(
+        request,
+        status_code=status_code,
+        code=code,
+        title=title,
+        detail=detail,
+        errors=errors,
+    )
 
 
 def problem_response(
@@ -41,15 +37,13 @@ def problem_response(
     detail: str,
     errors: list[dict[str, Any]] | None = None,
 ) -> JSONResponse:
-    return JSONResponse(
+    from rulesgen.api.problem_details import problem_response as _problem_response
+
+    return _problem_response(
+        request,
         status_code=status_code,
-        content=build_problem_details(
-            request,
-            status_code=status_code,
-            code=code,
-            title=title,
-            detail=detail,
-            errors=errors,
-        ),
-        media_type="application/problem+json",
+        code=code,
+        title=title,
+        detail=detail,
+        errors=errors,
     )

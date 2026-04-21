@@ -8,7 +8,7 @@ Thank you for your interest in **rulesgen**. Contributions are welcome.
 - [uv](https://docs.astral.sh/uv/) for environments and tasks
 
 ```bash
-uv sync --extra dev
+uv sync --extra api --extra dev
 ```
 
 ## Checks before you open a PR

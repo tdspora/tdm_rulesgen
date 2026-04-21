@@ -4,8 +4,8 @@ import pytest
 
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings
-from rulesgen.core.errors import DSLValidationFailed
 from rulesgen.domain.models import HelperPhase, SourceType
+from rulesgen.errors import DSLValidationFailed
 from rulesgen.execution.local import LocalExecutionAdapter
 from rulesgen.infra.llm_gateway import StubLLMGatewayClient
 from rulesgen.infra.repositories.in_memory import InMemoryPromptAuditRepository

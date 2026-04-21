@@ -34,7 +34,7 @@ fi
 
 echo "==> Repository metadata and merge policy: $REPO"
 gh repo edit "$REPO" \
-  --description "FastAPI service for safe rule parsing, compilation, preview execution, and sandbox-backed dataset generation." \
+  --description "Python library with an optional FastAPI app for safe rule parsing, compilation, preview execution, and sandbox-backed dataset generation." \
   --enable-issues \
   --enable-wiki=false \
   --enable-projects=false \
@@ -100,12 +100,16 @@ print(json.dumps(body))
 echo
 echo "Repository ${REPO} updated."
 echo
-echo "Important — automated pushes to ${DEFAULT_BRANCH} (e.g. semantic-release):"
+echo "Important — automated pushes to ${DEFAULT_BRANCH} (e.g. semantic-release + wheel release):"
 echo "  Branch protection above requires pull requests. The GitHub Actions app must be allowed to"
-echo "  bypass that requirement so release workflows can push version bumps."
+echo "  bypass that requirement so the release workflow can push version bumps and tags, and"
+echo "  publish wheel/sdist artifacts to the generated GitHub Release."
 echo "  In the GitHub UI: Settings → Branches → Branch protection rules → Edit rule for ${DEFAULT_BRANCH}"
 echo "  → enable “Allow specified actors to bypass required pull requests” → add “GitHub Actions”."
 echo "  (On some accounts the REST API cannot set this bypass; the UI is authoritative.)"
+echo
+echo "Also before the first release: create a baseline tag matching project.version in pyproject.toml,"
+echo "  e.g. git tag v0.1.0 && git push origin v0.1.0."
 echo
 echo "Optional hardening (UI): Settings → General → Features → Discussions; Moderation options;"
 echo "  Security overview and Dependabot version updates are already aligned with public-repo practice."

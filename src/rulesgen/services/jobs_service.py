@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from rulesgen.core.errors import ValidationFailed
 from rulesgen.domain.generation import DatasetGenerationRequest, RuleDraft
 from rulesgen.domain.models import JobKind, JobRecord, JobStatus, utc_now
 from rulesgen.domain.repositories import JobRepository
+from rulesgen.errors import ValidationFailed
 from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.rules_service import RulesService
 
