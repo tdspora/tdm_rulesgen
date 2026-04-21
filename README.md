@@ -121,6 +121,111 @@ RULESGEN_OPENSANDBOX_IMAGE=rulesgen:local \
 uv run uvicorn rulesgen.main:app --reload
 ```
 
+### Configure the LLM gateway
+
+`rulesgen` supports three LLM gateway modes for natural-language rule
+translation: `stub`, `http`, and `litellm`.
+
+#### How the main settings work
+
+- `RULESGEN_LLM_GATEWAY_BACKEND`
+  - `stub` (default): do not call an external LLM. This is useful for local
+    smoke tests. `RULESGEN_LLM_GATEWAY_URL` is ignored. `RULESGEN_LLM_MODEL_NAME`
+    is only recorded in audit metadata.
+  - `http`: call a remote gateway service. Set `RULESGEN_LLM_GATEWAY_URL` to
+    the gateway root URL; `rulesgen` sends requests to
+    `<RULESGEN_LLM_GATEWAY_URL>/translate`. If the URL is empty, the service
+    falls back to the `stub` client.
+  - `litellm`: call LiteLLM in process. `RULESGEN_LLM_MODEL_NAME` is passed to
+    LiteLLM as `model`, and `RULESGEN_LLM_GATEWAY_URL` is passed through as
+    LiteLLM `api_base`.
+
+- `RULESGEN_LLM_GATEWAY_URL`
+  - Used by the `http` and `litellm` backends.
+  - For `http`, set the remote gateway base URL, for example
+    `http://127.0.0.1:9000`.
+  - For `litellm`, leave it unset to use the built-in OpenAI default
+    (`https://api.openai.com/v1`), or set it to the provider-specific or proxy
+    base URL required by your LiteLLM model.
+  - When it is unset and `RULESGEN_LLM_GATEWAY_BACKEND=litellm`, `rulesgen`
+    resolves a default to `https://api.openai.com/v1`. If needed, you can use
+    `{RULESGEN_LLM_MODEL_NAME}` placeholder inside `RULESGEN_LLM_GATEWAY_URL`
+    to parametrize base URL with a deployment name. For example, `https://ai-proxy.lab.epam.com/openai/deployments/{RULESGEN_LLM_MODEL_NAME}/chat/`
+
+- `RULESGEN_LLM_MODEL_NAME`
+  - Used directly by the `litellm` backend as the model identifier.
+  - Not used by the local `http` client. In `stub` mode it is only recorded in
+    audit metadata.
+
+#### Examples
+
+Default OpenAI through `litellm`:
+
+```bash
+RULESGEN_LLM_GATEWAY_BACKEND=litellm
+RULESGEN_LLM_MODEL_NAME=gpt-4o-mini
+RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
+OPENAI_API_KEY=your-openai-key
+```
+
+You can omit `RULESGEN_LLM_GATEWAY_URL` here; `rulesgen` defaults it to
+`https://api.openai.com/v1`.
+
+OpenAI-compatible proxy through `litellm`:
+
+```bash
+RULESGEN_LLM_GATEWAY_BACKEND=litellm
+RULESGEN_LLM_MODEL_NAME=openai/mistral
+RULESGEN_LLM_GATEWAY_URL=http://127.0.0.1:4000
+RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
+OPENAI_API_KEY=proxy-or-provider-key
+```
+
+For OpenAI-compatible endpoints, LiteLLM expects a model name with an
+`openai/` prefix. Set `RULESGEN_LLM_GATEWAY_URL` to the `api_base` expected by
+that endpoint, and do not include endpoint-specific suffixes such as
+`/chat/completions`.
+
+Azure deployment through `litellm`:
+
+```bash
+RULESGEN_LLM_GATEWAY_BACKEND=litellm
+RULESGEN_LLM_MODEL_NAME=gpt-4o-mini
+RULESGEN_LLM_GATEWAY_URL=https://my-resource.openai.azure.com/
+RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
+AZURE_API_KEY=your-azure-key
+AZURE_API_VERSION=2024-06-01
+```
+
+Remote HTTP gateway:
+
+```bash
+RULESGEN_LLM_GATEWAY_BACKEND=http
+RULESGEN_LLM_GATEWAY_URL=http://127.0.0.1:9000
+RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
+```
+
+With this configuration, `rulesgen` calls
+`http://127.0.0.1:9000/translate`. `RULESGEN_LLM_MODEL_NAME` is not sent by the
+local client for the `http` backend.
+
+Stub backend for local smoke tests:
+
+```bash
+RULESGEN_LLM_GATEWAY_BACKEND=stub
+RULESGEN_LLM_MODEL_NAME=rulesgen-local-stub
+RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
+```
+
+For `litellm`, also provide the provider credentials required by the selected
+model, for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or
+Azure variables such as `AZURE_API_KEY` and `AZURE_API_VERSION`.
+
+The packaged prompt resources live under
+`src/rulesgen/resources/prompts/nl_to_dsl/v1/`. Semantic-cache files default to
+`.rulesgen-data/semantic-cache/` and can be tuned with the `RULESGEN_LLM_*`
+settings from `.env.example`.
+
 In another terminal:
 
 ```bash
@@ -155,10 +260,19 @@ metadata from the gateway layer.
 curl -s "$BASE_URL/rules/parse" \
   -H "Content-Type: application/json" \
   -d '{
-    "source_text": "If job_level is 5 or higher, set bonus to 10 percent of salary.",
-    "source_type": "natural_language",
-    "target_column": "bonus",
-    "schema_columns": ["salary", "job_level", "bonus"]
+    "table_name": "employees",
+    "schema": [
+      {"name": "salary", "type": "FLOAT", "nullable": false, "source": "syngen"},
+      {"name": "job_level", "type": "INT", "nullable": false, "source": "syngen"},
+      {
+        "name": "bonus",
+        "type": "FLOAT",
+        "nullable": true,
+        "source": "rule",
+        "source_text": "If job_level is 5 or higher, set bonus to 10 percent of salary.",
+        "source_type": "natural_language"
+      }
+    ]
   }'
 ```
 
@@ -167,7 +281,13 @@ Look for:
 - `dsl_candidate`
 - `diagnostics`
 - `prompt_audit`
+- `prompt_audits`
+- `metrics`
 - `explainability_trace`
+
+For schema-embedded rule requests, the target column comes from the schema row
+`name`. The row-level `source_type` should be `natural_language` or
+`domain_specific_language`.
 
 #### 2. Compile a restricted DSL expression into a `compiled_rule`
 
@@ -217,16 +337,21 @@ curl -s "$BASE_URL/datasets/generate" \
   -H "Content-Type: application/json" \
   -d '{
     "row_count": 3,
-    "schema_columns": ["order_id", "line_amount", "order_total"],
     "base_rows": [
       {"order_id": "A", "line_amount": 10},
       {"order_id": "A", "line_amount": 5},
       {"order_id": "B", "line_amount": 7}
     ],
-    "rules": [
+    "schema": [
+      {"name": "order_id", "type": "STRING", "nullable": false, "source": "syngen"},
+      {"name": "line_amount", "type": "INT", "nullable": false, "source": "syngen"},
       {
-        "target_column": "order_total",
-        "expression": "group_sum(key=col(\"order_id\"), value=col(\"line_amount\"))"
+        "name": "order_total",
+        "type": "INT",
+        "nullable": true,
+        "source": "rule",
+        "source_text": "group_sum(key=col(\"order_id\"), value=col(\"line_amount\"))",
+        "source_type": "domain_specific_language"
       }
     ],
     "seed": 17
@@ -238,6 +363,7 @@ The response includes:
 - `job_id`
 - `status`
 - `planned_column_sources`
+- `llm_metrics` when any rule was translated from natural language
 - `diagnostics`
 
 #### 5. Poll the job and inspect generated artifacts
@@ -250,6 +376,7 @@ The job response includes:
 
 - `result.output_path` for the generated dataset
 - `artifacts` entries for the dataset, manifest, diagnostics, and execution log
+- `llm_metrics` for the natural-language translation session, when applicable
 - `diagnostics` from the sandbox execution path
 
 By default, generated files are written under the configured local OSSFS root

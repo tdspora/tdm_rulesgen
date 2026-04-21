@@ -4,7 +4,14 @@ import pytest
 
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings
-from rulesgen.domain.models import HelperPhase, SourceType
+from rulesgen.domain.models import (
+    BatchTranslationItem,
+    GatewayTranslationBatch,
+    HelperPhase,
+    PromptAuditRecord,
+    SchemaColumnDefinition,
+    SourceType,
+)
 from rulesgen.errors import DSLValidationFailed
 from rulesgen.execution.local import LocalExecutionAdapter
 from rulesgen.infra.llm_gateway import StubLLMGatewayClient
@@ -85,6 +92,9 @@ def test_natural_language_parse_returns_dsl_candidate_and_prompt_audit() -> None
     assert frame.intent.value == "conditional"
     assert frame.dsl_candidate == "0.1 * col('salary') if col('job_level') >= 5 else 0"
     assert frame.prompt_audit is not None
+    assert len(frame.prompt_audits) == 1
+    assert frame.metrics is not None
+    assert frame.metrics.attempts == 1
     assert frame.explainability_trace is not None
 
 
@@ -100,4 +110,74 @@ def test_natural_language_parse_flags_prompt_security_patterns() -> None:
 
     assert frame.prompt_audit is not None
     assert frame.prompt_audit.suspicious is True
+    assert len(frame.prompt_audits) == 1
     assert any(item.code == "prompt_security_review" for item in frame.diagnostics)
+
+
+class RetryGatewayClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def translate_batch(
+        self,
+        *,
+        table_name: str | None,
+        schema: list[SchemaColumnDefinition],
+        rules,
+        previous_response_text: str | None = None,
+        error_feedback: str | None = None,
+        attempt_number: int = 1,
+    ) -> GatewayTranslationBatch:
+        del table_name, schema, previous_response_text, error_feedback
+        self.calls += 1
+        if self.calls == 1:
+            items = [
+                BatchTranslationItem(
+                    target_column=rules[0].target_column,
+                    dsl_candidate='unknown_helper("salary")',
+                    explanation="Invalid helper on first attempt.",
+                )
+            ]
+        else:
+            items = [
+                BatchTranslationItem(
+                    target_column=rules[0].target_column,
+                    dsl_candidate='coalesce(col("salary"), 0)',
+                    explanation="Fixed expression after feedback.",
+                )
+            ]
+        audit = PromptAuditRecord(
+            audit_id=f"audit-{self.calls}",
+            template_version="test-v1",
+            backend="stub",
+            prompt_text="prompt",
+            prompt_hash=f"hash-{self.calls}",
+            response_text="response",
+            attempt_number=attempt_number,
+        )
+        return GatewayTranslationBatch(
+            items=items,
+            prompt_audits=[audit],
+            backend="stub",
+            provider_name="stub",
+            model_name="retry-test",
+        )
+
+
+def test_natural_language_parse_retries_invalid_dsl_candidates() -> None:
+    compiler = RuleCompilerService(
+        Settings(llm_feedback_max_attempts=2),
+        gateway_client=RetryGatewayClient(),
+    )
+
+    frame = compiler.parse(
+        source_text="bonus should default salary to 0 when missing",
+        source_type=SourceType.NATURAL_LANGUAGE,
+        target_column="bonus",
+        schema_columns=["salary", "bonus"],
+    )
+
+    assert frame.dsl_candidate == "coalesce(col('salary'), 0)"
+    assert frame.metrics is not None
+    assert frame.metrics.attempts == 2
+    assert len(frame.prompt_audits) == 2

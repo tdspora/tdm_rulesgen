@@ -21,6 +21,8 @@ dependencies = [
   "httpx",
   "faker",
   "opensandbox>=0.1.7",
+  "litellm>=1.83.10",
+  "gptcache>=0.1.44",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +38,11 @@ dev = [
   "pytest-cov",
   "hypothesis",
   "ruff",
+]
+
+[tool.hatch.build]
+include = [
+  "src/rulesgen/resources/**/*.md",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -74,7 +81,11 @@ required-version = ">=0.8.0"
 commit_parser = "conventional"
 allow_zero_version = true
 major_on_zero = false
-build_command = "uv build"
+# The release GitHub Action runs in Docker, so it cannot reuse the runner's uv install.
+build_command = """
+python -m pip install "uv>=0.8.0"
+uv build
+"""
 version_toml = ["pyproject.toml:project.version"]
 
 [tool.semantic_release.branches.main]

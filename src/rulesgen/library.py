@@ -8,6 +8,7 @@ from rulesgen.domain.models import (
     CompiledRule,
     ExecutionPreview,
     ExplainabilityTrace,
+    SchemaColumnDefinition,
     SemanticFrame,
     SourceType,
 )
@@ -19,8 +20,10 @@ def parse_rule(
     source_text: str,
     *,
     source_type: SourceType,
-    schema_columns: list[str],
+    schema_columns: list[str] | None = None,
     target_column: str | None = None,
+    table_name: str | None = None,
+    schema: list[SchemaColumnDefinition] | None = None,
     settings: Settings | None = None,
     gateway_client: LLMGatewayClient | None = None,
 ) -> SemanticFrame:
@@ -29,7 +32,9 @@ def parse_rule(
         source_text=source_text,
         source_type=source_type,
         target_column=target_column,
-        schema_columns=schema_columns,
+        schema_columns=schema_columns or [],
+        table_name=table_name,
+        schema=schema,
     )
 
 

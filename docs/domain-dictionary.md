@@ -10,10 +10,13 @@ This glossary gives agents and contributors a shared vocabulary for the `rulesge
 - `rule`: a user-authored expression that computes or constrains a target column.
 - `target_column`: the output column a rule is intended to populate.
 - `source_type`: how the rule entered the system. Current values are `dsl` and `natural_language`.
+- `schema_column`: typed table metadata used to ground NL-to-DSL prompts. In API requests it can also carry embedded rule input for rule-generated columns via row-level `source_text` and `source_type`.
 - `semantic_frame`: the structured understanding of a rule before compilation. For `natural_language` input, it is the typed output that an LLM translator must produce before the rule can continue through validation. It captures intent, dependencies, helper functions, entities, and diagnostics.
 - `compiled_rule`: the validated executable artifact produced from a DSL expression. It stores the normalized expression, dependency list, helper list, and compiled code object.
 - `execution_preview`: the result of running one compiled rule against one preview row and seed.
 - `prompt_audit`: the persisted record of the LLM gateway prompt, response summary, template version, and prompt-security flags for one `natural_language` translation attempt.
+- `prompt_pack`: the versioned markdown prompt resources that define the system, request, and feedback prompts for NL translation.
+- `llm_request_metrics`: aggregated token, latency, cache, and cost metadata for one NL translation session.
 - `generated_artifact`: metadata that points to a manifest, dataset output, diagnostics file, or execution log written to local OSSFS-backed storage.
 - `job`: a tracked generation or execution request with lifecycle state such as `running`, `succeeded`, or `failed`.
 
@@ -22,12 +25,14 @@ This glossary gives agents and contributors a shared vocabulary for the `rulesge
 The canonical pipeline is:
 
 1. User input arrives as natural language or DSL.
-2. If the input is `natural_language`, an LLM translates it into a `semantic_frame` and DSL candidate; if the input is already `dsl`, the system parses it directly.
-3. DSL is validated against an AST whitelist.
-4. A `compiled_rule` is created from validated Python AST, not string-built Python source.
-5. The rule runs inside a restricted preview runtime.
-6. Full dataset generation is planned by the trusted service layer and executed through an isolated execution adapter.
-7. The API returns diagnostics, compiled metadata, a preview value, generated artifact locations, or a job record.
+2. If the input is `natural_language`, an LLM translates one explicit batch of target-column requests into `semantic_frame` data and DSL candidates; if the input is already `dsl`, the system parses it directly.
+3. Prompt resources and semantic-cache lookups can short-circuit repeated NL requests before a provider call.
+4. DSL is validated against an AST whitelist.
+5. Invalid DSL candidates can be sent back through a feedback prompt for bounded repair retries.
+6. A `compiled_rule` is created from validated Python AST, not string-built Python source.
+7. The rule runs inside a restricted preview runtime.
+8. Full dataset generation is planned by the trusted service layer and executed through an isolated execution adapter.
+9. The API returns diagnostics, prompt audits, LLM metrics, compiled metadata, a preview value, generated artifact locations, or a job record.
 
 Use these names when describing the system:
 
@@ -46,6 +51,8 @@ Use these names when describing the system:
 - `intent`: the high-level rule category. Current intents include `dsl_expression`, `arithmetic`, `conditional`, `faker`, `pattern`, `foreign_key`, `aggregate`, and `unknown`.
 - `helper_phase`: whether a runtime helper is evaluated in the `row` phase or the `group` phase.
 - `aggregate_helper`: extracted metadata for a single `group_sum` or `group_count` helper used by a compiled rule.
+- `feedback retry`: a bounded repair pass where compiler diagnostics are fed back to the LLM so it can correct only invalid DSL elements.
+- `semantic_cache`: the GPTCache-backed similarity cache for NL translation requests, scoped by prompt version, model, table, schema fingerprint, and requested targets.
 
 ## Runtime helper vocabulary
 
@@ -91,6 +98,7 @@ These helper names are part of the current DSL/runtime contract and should be tr
 - `compiler layer`: parsing, validation, normalization, and compilation in `src/rulesgen/compiler`.
 - `execution adapter`: the component that runs compiled rules in a concrete runtime.
 - `LLM gateway`: the adapter that translates `natural_language` input into a `semantic_frame` plus DSL candidate and records `prompt_audit` metadata.
+- `LiteLLM backend`: the in-process gateway backend that talks to OpenAI, Anthropic, and Gemini through one client interface.
 - `OSSFS`: the local-only file root used by the current implementation for generated manifests, sandbox results, and dataset outputs.
 - `repository`: persistence abstraction for compiled rules, jobs, prompt audits, and generated artifacts. The default app wiring uses local filesystem-backed repositories, while in-memory repositories remain available for tests and narrow slices.
 

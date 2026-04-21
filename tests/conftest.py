@@ -25,6 +25,7 @@ def build_client(
     os.environ["RULESGEN_AUDITS_REPOSITORY_DIR"] = str(data_dir / "audits")
     os.environ["RULESGEN_OSSFS_ROOT_DIR"] = str(data_dir / "ossfs")
     os.environ["RULESGEN_SANDBOX_BACKEND"] = "subprocess"
+    os.environ["RULESGEN_TRUSTED_HOSTS"] = "localhost,127.0.0.1,testserver"
     get_settings.cache_clear()
     app = create_app()
     return TestClient(app)

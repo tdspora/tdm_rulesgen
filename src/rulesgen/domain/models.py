@@ -16,6 +16,12 @@ class SourceType(StrEnum):
     NATURAL_LANGUAGE = "natural_language"
 
 
+class SchemaColumnSource(StrEnum):
+    SYNGEN = "syngen"
+    RULE = "rule"
+    BASE = "base"
+
+
 class DiagnosticLevel(StrEnum):
     INFO = "info"
     WARNING = "warning"
@@ -75,6 +81,57 @@ class Diagnostic:
 
 
 @dataclass(slots=True)
+class SchemaColumnDefinition:
+    name: str
+    data_type: str
+    nullable: bool
+    source: SchemaColumnSource
+    notes: str | None = None
+
+
+@dataclass(slots=True)
+class NaturalLanguageRuleRequest:
+    target_column: str
+    source_text: str
+
+
+@dataclass(slots=True)
+class TokenUsage:
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class CostBreakdown:
+    total_cost: float | None = None
+    currency: str = "USD"
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class CacheInsight:
+    backend: str | None = None
+    enabled: bool = False
+    hit: bool = False
+    scope_key: str | None = None
+    similarity: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class LLMRequestMetrics:
+    usage: TokenUsage | None = None
+    cost: CostBreakdown | None = None
+    latency_ms: float | None = None
+    attempts: int = 1
+    cache: CacheInsight | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class PromptAuditRecord:
     audit_id: str
     template_version: str
@@ -83,6 +140,12 @@ class PromptAuditRecord:
     prompt_hash: str
     response_text: str | None = None
     suspicious: bool = False
+    prompt_kind: str = "initial"
+    attempt_number: int = 1
+    model_name: str | None = None
+    provider_name: str | None = None
+    latency_ms: float | None = None
+    metrics: LLMRequestMetrics | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=utc_now)
 
@@ -95,8 +158,11 @@ class ExplainabilityTrace:
     dsl_candidate: str | None
     normalized_expression: str | None = None
     prompt_audit_id: str | None = None
+    prompt_audit_ids: list[str] = field(default_factory=list)
     prompt_template_version: str | None = None
     model_name: str | None = None
+    provider_name: str | None = None
+    metrics: LLMRequestMetrics | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -121,6 +187,45 @@ class SemanticFrame:
     translation_confidence: float | None = None
     explainability_trace: ExplainabilityTrace | None = None
     prompt_audit: PromptAuditRecord | None = None
+    prompt_audits: list[PromptAuditRecord] = field(default_factory=list)
+    metrics: LLMRequestMetrics | None = None
+
+
+@dataclass(slots=True)
+class BatchTranslationItem:
+    target_column: str | None
+    dsl_candidate: str | None = None
+    explanation: str | None = None
+    error: str | None = None
+    reason: str | None = None
+    suggestion: str | None = None
+    intent: RuleIntent = RuleIntent.UNKNOWN
+    entities: dict[str, Any] = field(default_factory=dict)
+    diagnostics: list[Diagnostic] = field(default_factory=list)
+    confidence: float | None = None
+
+    @property
+    def is_valid(self) -> bool:
+        return self.error is None and self.dsl_candidate is not None
+
+
+@dataclass(slots=True)
+class GatewayTranslationBatch:
+    items: list[BatchTranslationItem]
+    prompt_audits: list[PromptAuditRecord] = field(default_factory=list)
+    backend: str = "stub"
+    provider_name: str | None = None
+    model_name: str | None = None
+    metrics: LLMRequestMetrics | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class SemanticFrameBatch:
+    frames: list[SemanticFrame]
+    prompt_audits: list[PromptAuditRecord] = field(default_factory=list)
+    metrics: LLMRequestMetrics | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -181,3 +286,4 @@ class JobRecord:
     error: str | None = None
     diagnostics: list[Diagnostic] = field(default_factory=list)
     artifacts: list[GeneratedArtifact] = field(default_factory=list)
+    llm_metrics: LLMRequestMetrics | None = None

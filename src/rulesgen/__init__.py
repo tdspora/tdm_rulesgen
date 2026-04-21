@@ -2,7 +2,15 @@
 
 from rulesgen.container import AppContainer, build_compiler, build_container, build_gateway_client
 from rulesgen.core.config import Settings
-from rulesgen.domain.models import CompiledRule, ExecutionPreview, SemanticFrame, SourceType
+from rulesgen.domain.models import (
+    CompiledRule,
+    ExecutionPreview,
+    LLMRequestMetrics,
+    SchemaColumnDefinition,
+    SchemaColumnSource,
+    SemanticFrame,
+    SourceType,
+)
 from rulesgen.errors import (
     AppError,
     DSLParseFailed,
@@ -29,9 +37,12 @@ __all__ = [
     "NotFound",
     "SemanticFrame",
     "Settings",
+    "SchemaColumnDefinition",
+    "SchemaColumnSource",
     "SourceType",
     "Unauthorized",
     "ValidationFailed",
+    "LLMRequestMetrics",
     "build_compiler",
     "build_container",
     "build_gateway_client",

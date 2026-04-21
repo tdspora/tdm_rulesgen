@@ -117,6 +117,72 @@ print_json() {
   python3 -m json.tool "$1"
 }
 
+print_server_log_tail() {
+  local line_count=${1:-200}
+
+  [[ -f "$SERVER_LOG" ]] || return 0
+
+  printf '\nRecent server log (%s)\n' "$SERVER_LOG" >&2
+  tail -n "$line_count" "$SERVER_LOG" >&2 || true
+}
+
+print_server_logs_for_request() {
+  local response_file=$1
+  local request_id=""
+
+  [[ -f "$SERVER_LOG" ]] || return 0
+
+  request_id=$(json_get "$response_file" "request_id" 2>/dev/null || true)
+  if [[ -z "$request_id" ]]; then
+    print_server_log_tail
+    return 0
+  fi
+
+  if python3 - "$SERVER_LOG" "$request_id" <<'PY' >&2
+import json
+import sys
+from pathlib import Path
+
+log_path = Path(sys.argv[1])
+request_id = sys.argv[2]
+matches = []
+
+for line in log_path.read_text(encoding="utf-8").splitlines():
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if payload.get("request_id") == request_id:
+        matches.append(payload)
+
+if not matches:
+    raise SystemExit(1)
+
+print(f"\nServer log entries for request_id {request_id}")
+for index, payload in enumerate(matches, start=1):
+    if index > 1:
+        print()
+    header_parts = [
+        str(payload.get("level", "")).strip(),
+        str(payload.get("logger", "")).strip(),
+        str(payload.get("message", "")).strip(),
+    ]
+    header = " ".join(part for part in header_parts if part)
+    if header:
+        print(header)
+    exception = payload.get("exception")
+    if exception:
+        print(exception)
+    else:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+PY
+  then
+    return 0
+  fi
+
+  print_server_log_tail
+}
+
 request_json() {
   local method=$1
   local url=$2
@@ -125,21 +191,32 @@ request_json() {
   local http_code
 
   if [[ -n "$body_file" ]]; then
-    http_code=$(curl -sS -o "$output_file" -w "%{http_code}" \
+    if ! http_code=$(curl -sS -o "$output_file" -w "%{http_code}" \
       -X "$method" \
       -H "Content-Type: application/json" \
       --data-binary @"$body_file" \
-      "$url")
+      "$url"); then
+      printf 'Request to %s failed before an HTTP response was received.\n' "$url" >&2
+      print_server_log_tail
+      return 1
+    fi
   else
-    http_code=$(curl -sS -o "$output_file" -w "%{http_code}" \
+    if ! http_code=$(curl -sS -o "$output_file" -w "%{http_code}" \
       -X "$method" \
-      "$url")
+      "$url"); then
+      printf 'Request to %s failed before an HTTP response was received.\n' "$url" >&2
+      print_server_log_tail
+      return 1
+    fi
   fi
 
   if [[ ! "$http_code" =~ ^2 ]]; then
     printf 'Request to %s failed with status %s\n' "$url" "$http_code" >&2
     if [[ -s "$output_file" ]]; then
       print_json "$output_file" >&2 || sed -n '1,160p' "$output_file" >&2
+      print_server_logs_for_request "$output_file"
+    else
+      print_server_log_tail
     fi
     return 1
   fi
@@ -163,7 +240,7 @@ wait_for_ready() {
 
     if [[ -n "$SERVER_PID" ]] && ! kill -0 "$SERVER_PID" 2>/dev/null; then
       printf 'The background service exited before becoming ready.\n' >&2
-      [[ -f "$SERVER_LOG" ]] && sed -n '1,200p' "$SERVER_LOG" >&2
+      print_server_log_tail
       return 1
     fi
 
@@ -171,7 +248,7 @@ wait_for_ready() {
   done
 
   printf 'Timed out waiting for %s/health/ready\n' "$BASE_URL" >&2
-  [[ -f "$SERVER_LOG" ]] && sed -n '1,200p' "$SERVER_LOG" >&2
+  print_server_log_tail
   return 1
 }
 
@@ -336,10 +413,19 @@ main() {
 
   cat >"$parse_request" <<'JSON'
 {
-  "source_text": "If job_level is 5 or higher, set bonus to 10 percent of salary.",
-  "source_type": "natural_language",
-  "target_column": "bonus",
-  "schema_columns": ["salary", "job_level", "bonus"]
+  "table_name": "employees",
+  "schema": [
+    {"name": "salary", "type": "FLOAT", "nullable": false, "source": "syngen"},
+    {"name": "job_level", "type": "INT", "nullable": false, "source": "syngen"},
+    {
+      "name": "bonus",
+      "type": "FLOAT",
+      "nullable": true,
+      "source": "rule",
+      "source_text": "For all workers set bonus to double of salary",
+      "source_type": "natural_language"
+    }
+  ]
 }
 JSON
 
@@ -373,16 +459,21 @@ JSON
   cat >"$generate_request" <<'JSON'
 {
   "row_count": 3,
-  "schema_columns": ["order_id", "line_amount", "order_total"],
   "base_rows": [
     {"order_id": "A", "line_amount": 10},
     {"order_id": "A", "line_amount": 5},
     {"order_id": "B", "line_amount": 7}
   ],
-  "rules": [
+  "schema": [
+    {"name": "order_id", "type": "STRING", "nullable": false, "source": "syngen"},
+    {"name": "line_amount", "type": "INT", "nullable": false, "source": "syngen"},
     {
-      "target_column": "order_total",
-      "expression": "group_sum(key=col(\"order_id\"), value=col(\"line_amount\"))"
+      "name": "order_total",
+      "type": "INT",
+      "nullable": true,
+      "source": "rule",
+      "source_text": "group_sum(key=col(\"order_id\"), value=col(\"line_amount\"))",
+      "source_type": "domain_specific_language"
     }
   ],
   "seed": 17

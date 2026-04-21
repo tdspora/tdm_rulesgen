@@ -8,7 +8,9 @@
 #
 # Environment (optional):
 #   DEFAULT_BRANCH              default branch to protect (default: main)
-#   STATUS_CHECK_CONTEXT        required Actions check (default: ci / test)
+#   STATUS_CHECK_CONTEXT        legacy single required Actions check override
+#   STATUS_CHECK_CONTEXTS       comma-separated required Actions checks
+#                               (default: test)
 #   GITHUB_ACTIONS_APP_ID       GitHub Actions app id on github.com (default: 15368)
 #   REQUIRED_APPROVAL_COUNT     approving reviews before merge (default: 0)
 
@@ -70,32 +72,45 @@ gh api -X PUT "repos/${REPO}/vulnerability-alerts" >/dev/null 2>&1 || true
 gh api -X PUT "repos/${REPO}/private-vulnerability-reporting" >/dev/null 2>&1 || true
 
 echo "==> Branch protection for ${DEFAULT_BRANCH}: $REPO"
-python3 -c "
-import json, os
-ctx = os.environ.get('STATUS_CHECK_CONTEXT', 'ci / test')
-app_id = int(os.environ.get('GITHUB_ACTIONS_APP_ID', '15368'))
-approvals = int(os.environ.get('REQUIRED_APPROVAL_COUNT', '0'))
+python3 - <<'PY' | gh api "repos/${REPO}/branches/${DEFAULT_BRANCH}/protection" -X PUT --input - --silent
+import json
+import os
+
+raw_contexts = os.environ.get("STATUS_CHECK_CONTEXTS", "")
+legacy_context = os.environ.get("STATUS_CHECK_CONTEXT", "")
+
+if raw_contexts:
+    contexts = [ctx.strip() for ctx in raw_contexts.split(",") if ctx.strip()]
+elif legacy_context:
+    contexts = [legacy_context.strip()]
+else:
+    # Prefer the push-scoped check for branch protection so PRs don't wait on
+    # an event-specific pull_request variant of the same job.
+    contexts = ["test"]
+
+app_id = int(os.environ.get("GITHUB_ACTIONS_APP_ID", "15368"))
+approvals = int(os.environ.get("REQUIRED_APPROVAL_COUNT", "0"))
 body = {
-    'required_status_checks': {
-        'strict': True,
-        'checks': [{'context': ctx, 'app_id': app_id}],
+    "required_status_checks": {
+        "strict": True,
+        "checks": [{"context": ctx, "app_id": app_id} for ctx in contexts],
     },
-    'enforce_admins': True,
-    'required_pull_request_reviews': {
-        'dismiss_stale_reviews': True,
-        'require_code_owner_reviews': False,
-        'required_approving_review_count': approvals,
+    "enforce_admins": True,
+    "required_pull_request_reviews": {
+        "dismiss_stale_reviews": True,
+        "require_code_owner_reviews": False,
+        "required_approving_review_count": approvals,
     },
-    'restrictions': None,
-    'required_linear_history': True,
-    'allow_force_pushes': False,
-    'allow_deletions': False,
-    'required_conversation_resolution': True,
-    'lock_branch': False,
-    'allow_fork_syncing': True,
+    "restrictions": None,
+    "required_linear_history": True,
+    "allow_force_pushes": False,
+    "allow_deletions": False,
+    "required_conversation_resolution": True,
+    "lock_branch": False,
+    "allow_fork_syncing": True,
 }
 print(json.dumps(body))
-" | gh api "repos/${REPO}/branches/${DEFAULT_BRANCH}/protection" -X PUT --input - --silent
+PY
 
 echo
 echo "Repository ${REPO} updated."

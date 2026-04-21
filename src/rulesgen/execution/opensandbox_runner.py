@@ -10,9 +10,13 @@ from rulesgen.compiler.parser import parse_expression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.domain.models import (
     AggregateHelperSpec,
+    CacheInsight,
     CompiledRule,
+    CostBreakdown,
     ExplainabilityTrace,
+    LLMRequestMetrics,
     SourceType,
+    TokenUsage,
 )
 from rulesgen.execution.engine import execute_generation_plan
 
@@ -124,8 +128,56 @@ def _deserialize_trace(payload: dict[str, Any] | None) -> ExplainabilityTrace | 
         dsl_candidate=payload.get("dsl_candidate"),
         normalized_expression=payload.get("normalized_expression"),
         prompt_audit_id=payload.get("prompt_audit_id"),
+        prompt_audit_ids=list(payload.get("prompt_audit_ids", [])),
         prompt_template_version=payload.get("prompt_template_version"),
         model_name=payload.get("model_name"),
+        provider_name=payload.get("provider_name"),
+        metrics=_deserialize_llm_metrics(payload.get("metrics")),
+        metadata=dict(payload.get("metadata", {})),
+    )
+
+
+def _deserialize_llm_metrics(payload: dict[str, Any] | None) -> LLMRequestMetrics | None:
+    if payload is None:
+        return None
+    usage_payload = payload.get("usage")
+    cost_payload = payload.get("cost")
+    cache_payload = payload.get("cache")
+    return LLMRequestMetrics(
+        usage=(
+            TokenUsage(
+                prompt_tokens=usage_payload.get("prompt_tokens"),
+                completion_tokens=usage_payload.get("completion_tokens"),
+                total_tokens=usage_payload.get("total_tokens"),
+                cached_tokens=usage_payload.get("cached_tokens"),
+                raw=dict(usage_payload.get("raw", {})),
+            )
+            if isinstance(usage_payload, dict)
+            else None
+        ),
+        cost=(
+            CostBreakdown(
+                total_cost=cost_payload.get("total_cost"),
+                currency=str(cost_payload.get("currency", "USD")),
+                raw=dict(cost_payload.get("raw", {})),
+            )
+            if isinstance(cost_payload, dict)
+            else None
+        ),
+        latency_ms=payload.get("latency_ms"),
+        attempts=int(payload.get("attempts", 1)),
+        cache=(
+            CacheInsight(
+                backend=cache_payload.get("backend"),
+                enabled=bool(cache_payload.get("enabled", False)),
+                hit=bool(cache_payload.get("hit", False)),
+                scope_key=cache_payload.get("scope_key"),
+                similarity=cache_payload.get("similarity"),
+                metadata=dict(cache_payload.get("metadata", {})),
+            )
+            if isinstance(cache_payload, dict)
+            else None
+        ),
         metadata=dict(payload.get("metadata", {})),
     )
 
