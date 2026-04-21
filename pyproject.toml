@@ -74,7 +74,11 @@ required-version = ">=0.8.0"
 commit_parser = "conventional"
 allow_zero_version = true
 major_on_zero = false
-build_command = "uv build"
+# The release GitHub Action runs in Docker, so it cannot reuse the runner's uv install.
+build_command = """
+python -m pip install "uv>=0.8.0"
+uv build
+"""
 version_toml = ["pyproject.toml:project.version"]
 
 [tool.semantic_release.branches.main]
