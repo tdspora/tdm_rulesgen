@@ -9,6 +9,11 @@ services:
       RULESGEN_ENV: local
       RULESGEN_DOCS_ENABLED: "true"
       RULESGEN_AUTH_ENABLED: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AZURE_API_KEY: ${AZURE_API_KEY:-}
+      AZURE_API_VERSION: ${AZURE_API_VERSION:-}
       RULESGEN_CORS_ALLOW_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
       RULESGEN_TRUSTED_HOSTS: '["localhost","127.0.0.1","testserver","rulesgen"]'
       RULESGEN_RULES_REPOSITORY_DIR: /home/appuser/.rulesgen-data/rules
@@ -19,8 +24,16 @@ services:
       RULESGEN_SANDBOX_BACKEND: subprocess
       RULESGEN_SANDBOX_TIMEOUT_SECONDS: "30"
       RULESGEN_SANDBOX_PYTHON_EXECUTABLE: python
-      RULESGEN_LLM_GATEWAY_BACKEND: stub
-      RULESGEN_LLM_MODEL_NAME: rulesgen-local-stub
+      RULESGEN_LLM_GATEWAY_BACKEND: litellm
+      RULESGEN_LLM_GATEWAY_TIMEOUT_SECONDS: 10
+      RULESGEN_LLM_PROMPT_TEMPLATE_VERSION: v1
+      RULESGEN_LLM_MODEL_NAME: gpt-4
+      RULESGEN_LLM_TEMPERATURE: 0
+      RULESGEN_LLM_FEEDBACK_MAX_ATTEMPTS: 2
+      RULESGEN_LLM_SEMANTIC_CACHE_ENABLED: true
+      RULESGEN_LLM_SEMANTIC_CACHE_DIR: /home/appuser/.rulesgen-data/semantic-cache
+      RULESGEN_LLM_SEMANTIC_CACHE_SIMILARITY_THRESHOLD: 0.99
+      RULESGEN_LLM_SEMANTIC_CACHE_EMBEDDING_DIMENSION: 256
     volumes:
       - rulesgen-data:/home/appuser/.rulesgen-data
 

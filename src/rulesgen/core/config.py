@@ -6,17 +6,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from rulesgen.version_info import package_version
-
-DEFAULT_LLM_GATEWAY_URL_TEMPLATE = "https://api.openai.com/v1"
-
-
-def build_default_llm_gateway_url(model_name: str) -> str:
-    model_deployment = model_name.rsplit("/", maxsplit=1)[-1].strip()
-    return DEFAULT_LLM_GATEWAY_URL_TEMPLATE.format(RULESGEN_LLM_MODEL_NAME=model_deployment)
 
 
 class Settings(BaseSettings):
@@ -86,12 +79,6 @@ class Settings(BaseSettings):
                 return json.loads(stripped)
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
-
-    @model_validator(mode="after")
-    def populate_llm_gateway_url(self) -> Settings:
-        if not self.llm_gateway_url and self.llm_gateway_backend == "litellm":
-            self.llm_gateway_url = build_default_llm_gateway_url(self.llm_model_name)
-        return self
 
 
 @lru_cache(maxsize=1)

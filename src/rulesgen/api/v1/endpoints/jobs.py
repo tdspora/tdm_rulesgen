@@ -3,8 +3,13 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse
 
-from rulesgen.api.dependencies import get_current_principal, get_jobs_service
+from rulesgen.api.dependencies import (
+    get_artifact_download_service,
+    get_current_principal,
+    get_jobs_service,
+)
 from rulesgen.api.model_mapping import (
     to_domain_rule_drafts,
     to_domain_rule_drafts_from_schema,
@@ -15,6 +20,7 @@ from rulesgen.auth.models import Principal
 from rulesgen.domain.models import JobRecord
 from rulesgen.schemas.jobs import CreateJobRequest, JobArtifactSchema, JobResponse
 from rulesgen.schemas.rules import DiagnosticSchema
+from rulesgen.services.artifact_download_service import ArtifactDownloadService
 from rulesgen.services.jobs_service import JobsService
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -86,3 +92,40 @@ def get_job(
     del principal
     job = jobs_service.get_job(job_id)
     return _to_job_response(job)
+
+
+@router.get("/{job_id}/dataset", response_class=FileResponse)
+def download_job_dataset(
+    job_id: str,
+    artifact_download_service: Annotated[
+        ArtifactDownloadService, Depends(get_artifact_download_service)
+    ],
+    principal: Annotated[Principal, Depends(get_current_principal)],
+) -> FileResponse:
+    del principal
+    download = artifact_download_service.resolve_dataset(job_id)
+    return FileResponse(
+        path=download.source_path,
+        media_type=download.media_type,
+        filename=download.filename,
+        content_disposition_type="attachment",
+    )
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}", response_class=FileResponse)
+def download_job_artifact(
+    job_id: str,
+    artifact_id: str,
+    artifact_download_service: Annotated[
+        ArtifactDownloadService, Depends(get_artifact_download_service)
+    ],
+    principal: Annotated[Principal, Depends(get_current_principal)],
+) -> FileResponse:
+    del principal
+    download = artifact_download_service.resolve_artifact(job_id, artifact_id)
+    return FileResponse(
+        path=download.source_path,
+        media_type=download.media_type,
+        filename=download.filename,
+        content_disposition_type="attachment",
+    )

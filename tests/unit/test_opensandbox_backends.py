@@ -215,12 +215,19 @@ def test_alibaba_opensandbox_adapter_downloads_outputs_and_persists_artifacts(
     assert json.loads(Path(result.output_path).read_text(encoding="utf-8")) == [
         {"bonus": 20, "salary": 10}
     ]
+    assert result.diagnostics[0].location == result.output_path
     assert any(path.endswith("/sandbox_manifest.json") for path in files.written_files)
     manifest_payload = json.loads(files.written_files[f"{remote_job_dir}/sandbox_manifest.json"])
     assert manifest_payload["output_rows_path"] == remote_output_path
     assert sandbox.kill_called is True
     assert sandbox.close_called is True
     assert len(artifact_repository.list_for_job(job_id)) == 5
+    dataset_artifact = next(
+        artifact
+        for artifact in artifact_repository.list_for_job(job_id)
+        if artifact.kind.value == "dataset"
+    )
+    assert dataset_artifact.path == result.output_path
 
 
 def test_alibaba_opensandbox_adapter_maps_failures_and_still_cleans_up(tmp_path: Path) -> None:

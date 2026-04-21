@@ -257,6 +257,7 @@ class AlibabaOpenSandboxExecutionAdapter:
                 level=DiagnosticLevel.INFO,
                 code="opensandbox_execute",
                 message="Dataset generation completed in Alibaba OpenSandbox.",
+                location=str(local_output_rows_path),
             )
         ]
         diagnostics.extend(

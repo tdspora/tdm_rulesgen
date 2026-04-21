@@ -12,6 +12,9 @@ class LocalOssfsStore:
         self.root_dir = root_dir.resolve()
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
+    def resolve_path(self, path: str | Path) -> Path:
+        return self._resolve(path)
+
     def job_dir(self, job_id: str) -> Path:
         path = self._resolve(job_id)
         path.mkdir(parents=True, exist_ok=True)

@@ -13,6 +13,7 @@ MANAGED_DIRECTORIES = (
     ("RULESGEN_ARTIFACTS_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/artifacts"),
     ("RULESGEN_AUDITS_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/audits"),
     ("RULESGEN_OSSFS_ROOT_DIR", "/home/appuser/.rulesgen-data/ossfs"),
+    ("RULESGEN_LLM_SEMANTIC_CACHE_DIR", "/home/appuser/.rulesgen-data/semantic-cache"),
 )
 
 

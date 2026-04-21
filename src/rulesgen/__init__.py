@@ -11,6 +11,7 @@ from rulesgen.domain.models import (
     SemanticFrame,
     SourceType,
 )
+from rulesgen.downloads import download_job_artifact, download_job_dataset
 from rulesgen.errors import (
     AppError,
     DSLParseFailed,
@@ -47,6 +48,8 @@ __all__ = [
     "build_container",
     "build_gateway_client",
     "compile_rule",
+    "download_job_artifact",
+    "download_job_dataset",
     "execute_generation_plan",
     "execute_preview_rule",
     "parse_rule",

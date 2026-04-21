@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 
 def test_health_endpoints(client) -> None:
     live_response = client.get("/health/live")
@@ -172,16 +169,28 @@ def test_generate_dataset_flow(client) -> None:
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["planned_column_sources"]["order_total"] == "rule_generated"
+    assert "rows" not in body
 
     job_response = client.get(f"/jobs/{body['job_id']}")
     assert job_response.status_code == 200
     job_body = job_response.json()
     assert job_body["result"]["row_count"] == 3
     assert any(item["kind"] == "dataset" for item in job_body["artifacts"])
+    assert "rows" not in job_body["result"]
 
-    output_path = Path(job_body["result"]["output_path"])
-    rows = json.loads(output_path.read_text(encoding="utf-8"))
+    dataset_download_response = client.get(f"/jobs/{body['job_id']}/dataset")
+    assert dataset_download_response.status_code == 200
+    rows = dataset_download_response.json()
     assert [row["order_total"] for row in rows] == [15, 15, 7]
+
+    manifest_artifact = next(
+        item for item in job_body["artifacts"] if item["kind"] == "input_manifest"
+    )
+    artifact_download_response = client.get(
+        f"/jobs/{body['job_id']}/artifacts/{manifest_artifact['artifact_id']}"
+    )
+    assert artifact_download_response.status_code == 200
+    assert artifact_download_response.json()["job_id"] == body["job_id"]
 
 
 def test_generate_dataset_with_natural_language_rule_returns_llm_metrics(client) -> None:
@@ -230,3 +239,63 @@ def test_generate_dataset_with_natural_language_rule_returns_llm_metrics(client)
     assert job_response.status_code == 200
     job_body = job_response.json()
     assert job_body["llm_metrics"]["attempts"] == 1
+
+
+def test_job_dataset_download_rejects_non_generation_jobs(client) -> None:
+    compile_response = client.post(
+        "/rules/compile",
+        json={
+            "expression": 'col("salary") * 2',
+            "target_column": "bonus",
+        },
+    )
+    assert compile_response.status_code == 200
+    artifact_id = compile_response.json()["artifact_id"]
+
+    job_response = client.post(
+        "/jobs",
+        json={
+            "kind": "execute_preview",
+            "artifact_id": artifact_id,
+            "row": {"salary": 10},
+            "seed": 7,
+        },
+    )
+    assert job_response.status_code == 200
+    job_id = job_response.json()["job_id"]
+
+    download_response = client.get(f"/jobs/{job_id}/dataset")
+    assert download_response.status_code == 422
+    assert download_response.json()["code"] == "validation_failed"
+
+
+def test_job_dataset_download_returns_not_found_for_unknown_job(client) -> None:
+    response = client.get("/jobs/missing-job/dataset")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "job_not_found"
+
+
+def test_job_artifact_download_returns_not_found_for_unknown_artifact(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "row_count": 1,
+            "base_rows": [{"order_id": "A"}],
+            "schema": [
+                {
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                }
+            ],
+            "seed": 17,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    artifact_response = client.get(f"/jobs/{job_id}/artifacts/missing-artifact")
+    assert artifact_response.status_code == 404
+    assert artifact_response.json()["code"] == "not_found"

@@ -1,342 +1,103 @@
 # rulesgen
 
-`rulesgen` is a Python library for safe rule parsing, compilation, local preview
-execution, and sandbox-backed dataset generation, with an optional
-FastAPI/Starlette/Uvicorn application layered on top.
+`rulesgen` is a secure rule-processing service for synthetic data workflows.
 
-## What is included
+It converts natural-language instructions into a restricted DSL, validates and compiles that DSL into an executable artifact, lets you preview rule behavior locally, and can generate datasets through either a local subprocess executor or an OpenSandbox-backed runtime.
 
-- A production-minded ASGI application skeleton under `src/rulesgen/`
-- Structured logging, request context propagation, and RFC 9457 problem details
-- Versioned API modules with health, rules, dataset, and jobs endpoints
-- A restricted DSL compiler built on Python AST validation
-- Filesystem-backed repositories for rules, jobs, prompt audits, and artifacts
-- A local preview executor, a default subprocess dataset executor, and an optional Alibaba OpenSandbox adapter for full dataset generation
-- Tests, CI, and a container build baseline
+The project is designed for teams that need:
+- natural-language rule authoring
+- deterministic validation and compilation
+- safe local previews
+- optional sandboxed execution for full dataset generation
 
-## Install
+## What it does
 
-Use the package as a library:
+`rulesgen` supports a staged rule lifecycle:
 
-```bash
-pip install rulesgen
-```
+1. **Parse** natural language into an untrusted intermediate form (`semantic_frame`) and DSL candidate
+2. **Compile** the DSL into a validated executable artifact (`compiled_rule`)
+3. **Preview** rule execution against a sample row
+4. **Generate** datasets using a local or sandbox-backed execution path
 
-Install the optional API layer:
+This separation is intentional. Natural-language output is never trusted directly. A rule only becomes executable after validation and compilation succeed.
 
-```bash
-pip install "rulesgen[api]"
-```
-
-For local development in this repository:
-
-```bash
-uv sync --extra api --extra dev
-```
-
-## Release automation
-
-Pushes to `main` run the CI checks, build the wheel and sdist, and attach those
-artifacts to the GitHub Release created by semantic-release.
-
-Before the first automated release, create a baseline tag that matches
-`project.version` in `pyproject.toml`, for example:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-If branch protection requires pull requests on `main`, allow the GitHub Actions
-app to bypass that requirement so semantic-release can push its version bump
-commit and the release job can attach wheel/sdist assets to the generated
-GitHub Release. [`scripts/configure-github-repo-oss.sh`](scripts/configure-github-repo-oss.sh)
-applies the recommended repository and branch-protection settings and prints
-the one manual UI step needed to enable the GitHub Actions bypass.
-
-## Library quick start
-
-```python
-from rulesgen import compile_rule, preview_rule
-
-compiled_rule = compile_rule(
-    'coalesce(col("bonus"), 0) + col("salary")',
-    target_column="total_comp",
-)
-preview = preview_rule(
-    compiled_rule,
-    row={"salary": 120000, "bonus": 5000},
-    seed=99,
-)
-
-print(preview.value)
-```
-
-## Using `rulesgen` as a library (no service required)
-
-You can embed `rulesgen` directly in your own Python program without starting the
-FastAPI application. The high-level entry points are exported from the package:
-
-- `compile_rule`: validate + compile a restricted DSL expression into a `CompiledRule`
-- `preview_rule`: run a compiled rule against one row locally (row-phase helpers only)
-- `parse_rule`: turn natural language into a `SemanticFrame` (requires an LLM gateway backend)
-- `execute_generation_plan`: run a set of compiled rules across many rows in-process
-
-### Compile and preview (pure local execution)
-
-This path does not require the API layer or any external services:
-
-```python
-from rulesgen import compile_rule, preview_rule
-
-compiled = compile_rule('0.1 * col("salary") if col("job_level") >= 5 else 0', target_column="bonus")
-preview = preview_rule(compiled, row={"salary": 120000, "job_level": 6}, seed=99)
-print(preview.value)
-```
-
-### Parse natural language (LLM-backed)
-
-If you want to call `parse_rule`, configure the gateway backend via `Settings`
-or environment variables (see `.env.example` for all supported `RULESGEN_*`
-settings):
-
-```python
-from rulesgen import Settings, SourceType, parse_rule
-
-settings = Settings(
-    llm_gateway_backend="stub",  # or: "http" / "litellm"
-    llm_model_name="rulesgen-local-stub",
-)
-
-frame = parse_rule(
-    "If job_level is 5 or higher, set bonus to 10 percent of salary.",
-    source_type=SourceType.NATURAL_LANGUAGE,
-    table_name="employees",
-    schema_columns=["salary", "job_level", "bonus"],
-    target_column="bonus",
-    settings=settings,
-)
-
-print(frame.dsl_candidate)
-```
-
-### Apply multiple rules to a dataset in-process
-
-If you already have base rows and want to apply several compiled rules locally,
-use `execute_generation_plan`:
-
-```python
-from rulesgen import Settings, compile_rule, execute_generation_plan
-
-settings = Settings()
-rows = [
-    {"order_id": "A", "line_amount": 10},
-    {"order_id": "A", "line_amount": 5},
-    {"order_id": "B", "line_amount": 7},
-]
-
-compiled_rules = [
-    compile_rule('col("line_amount") * 2', target_column="line_amount_x2", settings=settings),
-    compile_rule('group_sum(key=col("order_id"), value=col("line_amount"))', target_column="order_total", settings=settings),
-]
-
-run = execute_generation_plan(
-    rows=rows,
-    compiled_rules=compiled_rules,
-    seed=17,
-    references={},
-    max_length=settings.dsl_max_length,
-    max_depth=settings.dsl_max_depth,
-    max_nodes=settings.dsl_max_nodes,
-)
-
-print(run.rows)
-print(run.column_sources)
-```
+---
 
 ## Quick start
 
-### Run the OpenSandbox-backed flow
+The fastest way to get started is with Docker Compose.
 
-The quickest way to validate the OpenSandbox integration end to end is:
+### Prerequisites
 
-```bash
-./scripts/quick_start.sh
-```
+- Docker
+- `docker compose`
+- `curl`
 
-By default the script:
+### Start the stack
 
-- builds the `rulesgen:local` image for sandbox jobs
-- starts or reuses `opensandbox-server`
-- starts a local `rulesgen` API with `RULESGEN_SANDBOX_BACKEND=opensandbox`
-- uses direct sandbox endpoints (`RULESGEN_OPENSANDBOX_USE_SERVER_PROXY=false`)
-- runs the parse, compile, preview, dataset-generation, and job-poll flow below
+The default setup runs:
+- `rulesgen`
+- OpenSandbox
+- an LLM-backed translation path through LiteLLM
 
-Requirements: `uv`, Docker, and the Docker Compose plugin.
+One provider credential required (examples):
+  - `OPENAI_API_KEY` (OpenAI / OpenAI-compatible)
+  - `ANTHROPIC_API_KEY`
+  - `GEMINI_API_KEY`
+  - `AZURE_API_KEY` (Azure OpenAI; often used with `AZURE_API_VERSION`)
+These are required for the default Docker Compose setup because `RULESGEN_LLM_GATEWAY_BACKEND=litellm`. Docker Compose forwards them into the `rulesgen` container via `${VAR:-}` entries in the compose files.
 
-To use the local subprocess dataset executor instead:
 
-```bash
-QUICK_START_BACKEND=subprocess ./scripts/quick_start.sh
-```
-
-### Start the service manually
-
-Local subprocess dataset executor:
+Start the stack:
 
 ```bash
-uv sync --extra api --extra dev
-uv run uvicorn rulesgen.main:app --reload
-```
+./scripts/run_stack.sh
+````
 
-OpenSandbox-backed dataset generation:
+If the key is not already set, the script will prompt you for it.
 
-```bash
-uv sync --extra api --extra dev
-docker build -t rulesgen:local .
-docker compose -f compose.yaml -f compose.opensandbox.yaml up --build -d opensandbox-server
-RULESGEN_SANDBOX_BACKEND=opensandbox \
-RULESGEN_OPENSANDBOX_DOMAIN=127.0.0.1:8090 \
-RULESGEN_OPENSANDBOX_PROTOCOL=http \
-RULESGEN_OPENSANDBOX_USE_SERVER_PROXY=false \
-RULESGEN_OPENSANDBOX_IMAGE=rulesgen:local \
-uv run uvicorn rulesgen.main:app --reload
-```
+### Service endpoints
 
-### Configure the LLM gateway
+Once the stack is up, the API is available at:
 
-`rulesgen` supports three LLM gateway modes for natural-language rule
-translation: `stub`, `http`, and `litellm`.
+* `http://127.0.0.1:8000`
+* `http://127.0.0.1:8000/docs` for OpenAPI documentation, when enabled
 
-#### How the main settings work
-
-- `RULESGEN_LLM_GATEWAY_BACKEND`
-  - `stub` (default): do not call an external LLM. This is useful for local
-    smoke tests. `RULESGEN_LLM_GATEWAY_URL` is ignored. `RULESGEN_LLM_MODEL_NAME`
-    is only recorded in audit metadata.
-  - `http`: call a remote gateway service. Set `RULESGEN_LLM_GATEWAY_URL` to
-    the gateway root URL; `rulesgen` sends requests to
-    `<RULESGEN_LLM_GATEWAY_URL>/translate`. If the URL is empty, the service
-    falls back to the `stub` client.
-  - `litellm`: call LiteLLM in process. `RULESGEN_LLM_MODEL_NAME` is passed to
-    LiteLLM as `model`, and `RULESGEN_LLM_GATEWAY_URL` is passed through as
-    LiteLLM `api_base`.
-
-- `RULESGEN_LLM_GATEWAY_URL`
-  - Used by the `http` and `litellm` backends.
-  - For `http`, set the remote gateway base URL, for example
-    `http://127.0.0.1:9000`.
-  - For `litellm`, leave it unset to use the built-in OpenAI default
-    (`https://api.openai.com/v1`), or set it to the provider-specific or proxy
-    base URL required by your LiteLLM model.
-  - When it is unset and `RULESGEN_LLM_GATEWAY_BACKEND=litellm`, `rulesgen`
-    resolves a default to `https://api.openai.com/v1`. If needed, you can use
-    `{RULESGEN_LLM_MODEL_NAME}` placeholder inside `RULESGEN_LLM_GATEWAY_URL`
-    to parametrize base URL with a deployment name. For example, `https://ai-proxy.lab.epam.com/openai/deployments/{RULESGEN_LLM_MODEL_NAME}/chat/`
-
-- `RULESGEN_LLM_MODEL_NAME`
-  - Used directly by the `litellm` backend as the model identifier.
-  - Not used by the local `http` client. In `stub` mode it is only recorded in
-    audit metadata.
-
-#### Examples
-
-Default OpenAI through `litellm`:
+### Verify readiness
 
 ```bash
-RULESGEN_LLM_GATEWAY_BACKEND=litellm
-RULESGEN_LLM_MODEL_NAME=gpt-4o-mini
-RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
-OPENAI_API_KEY=your-openai-key
+curl -s http://127.0.0.1:8000/health/ready
 ```
 
-You can omit `RULESGEN_LLM_GATEWAY_URL` here; `rulesgen` defaults it to
-`https://api.openai.com/v1`.
+### Run the example workflows
 
-OpenAI-compatible proxy through `litellm`:
-
-```bash
-RULESGEN_LLM_GATEWAY_BACKEND=litellm
-RULESGEN_LLM_MODEL_NAME=openai/mistral
-RULESGEN_LLM_GATEWAY_URL=http://127.0.0.1:4000
-RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
-OPENAI_API_KEY=proxy-or-provider-key
-```
-
-For OpenAI-compatible endpoints, LiteLLM expects a model name with an
-`openai/` prefix. Set `RULESGEN_LLM_GATEWAY_URL` to the `api_base` expected by
-that endpoint, and do not include endpoint-specific suffixes such as
-`/chat/completions`.
-
-Azure deployment through `litellm`:
-
-```bash
-RULESGEN_LLM_GATEWAY_BACKEND=litellm
-RULESGEN_LLM_MODEL_NAME=gpt-4o-mini
-RULESGEN_LLM_GATEWAY_URL=https://my-resource.openai.azure.com/
-RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
-AZURE_API_KEY=your-azure-key
-AZURE_API_VERSION=2024-06-01
-```
-
-Remote HTTP gateway:
-
-```bash
-RULESGEN_LLM_GATEWAY_BACKEND=http
-RULESGEN_LLM_GATEWAY_URL=http://127.0.0.1:9000
-RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
-```
-
-With this configuration, `rulesgen` calls
-`http://127.0.0.1:9000/translate`. `RULESGEN_LLM_MODEL_NAME` is not sent by the
-local client for the `http` backend.
-
-Stub backend for local smoke tests:
-
-```bash
-RULESGEN_LLM_GATEWAY_BACKEND=stub
-RULESGEN_LLM_MODEL_NAME=rulesgen-local-stub
-RULESGEN_LLM_PROMPT_TEMPLATE_VERSION=v1
-```
-
-For `litellm`, also provide the provider credentials required by the selected
-model, for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or
-Azure variables such as `AZURE_API_KEY` and `AZURE_API_VERSION`.
-
-The packaged prompt resources live under
-`src/rulesgen/resources/prompts/nl_to_dsl/v1/`. Semantic-cache files default to
-`.rulesgen-data/semantic-cache/` and can be tuned with the `RULESGEN_LLM_*`
-settings from `.env.example`.
-
-In another terminal:
+In a new terminal:
 
 ```bash
 export BASE_URL=http://127.0.0.1:8000
-curl -s "$BASE_URL/health/ready"
 ```
 
-### Start with Docker Compose
+Then continue with the two workflows below.
 
-Default local stack with the current subprocess dataset executor:
+---
 
-```bash
-docker compose up --build
-```
+## Example workflows
 
-OpenSandbox control plane for the host-run API or `./scripts/quick_start.sh`:
+## 1. Parse → Compile → Preview
 
-```bash
-docker compose -f compose.yaml -f compose.opensandbox.yaml up --build opensandbox-server
-```
+This workflow shows the safest path from natural-language input to executable rule behavior.
 
-The OpenSandbox quick-start path expects the built `rulesgen:local` image to be available for sandbox jobs and uses direct sandbox endpoint access from the host-run API.
+### Step 1: Parse a natural-language instruction
 
-### End-to-end flow
+The parse endpoint returns:
 
-#### 1. Parse a natural-language rule into a `semantic_frame`
+* inferred intent
+* a candidate DSL expression
+* diagnostics
+* prompt-audit metadata
+* explainability and metrics data
 
-This returns the inferred intent, a DSL candidate, diagnostics, and prompt-audit
-metadata from the gateway layer.
+At this stage, the output is still **untrusted**.
 
 ```bash
 curl -s "$BASE_URL/rules/parse" \
@@ -358,23 +119,22 @@ curl -s "$BASE_URL/rules/parse" \
   }'
 ```
 
-Look for:
+Important fields in the response:
 
-- `dsl_candidate`
-- `diagnostics`
-- `prompt_audit`
-- `prompt_audits`
-- `metrics`
-- `explainability_trace`
+* `dsl_candidate`
+* `diagnostics`
+* `prompt_audit`
+* `metrics`
+* `explainability_trace`
 
-For schema-embedded rule requests, the target column comes from the schema row
-`name`. The row-level `source_type` should be `natural_language` or
-`domain_specific_language`.
+For schema-embedded rule requests, the target column is inferred from the schema row `name`. Supported row-level `source_type` values are:
 
-#### 2. Compile a restricted DSL expression into a `compiled_rule`
+* `natural_language`
+* `domain_specific_language`
 
-Copy the `dsl_candidate` from the parse response, or compile a DSL expression
-directly:
+### Step 2: Compile the DSL into a validated rule artifact
+
+Use the `dsl_candidate` from the parse response, or submit a DSL expression directly.
 
 ```bash
 curl -s "$BASE_URL/rules/compile" \
@@ -387,12 +147,11 @@ curl -s "$BASE_URL/rules/compile" \
 EOF
 ```
 
-Copy the returned `artifact_id` for the preview and job calls below.
+Save the returned `artifact_id`. You will use it in the preview step.
 
-#### 3. Preview the compiled rule with one sample row
+### Step 3: Preview the rule against a sample row
 
-`/rules/preview` uses the local preview executor and is limited to row-phase
-helpers.
+The preview endpoint executes the compiled rule locally and supports row-phase helpers only.
 
 ```bash
 curl -s "$BASE_URL/rules/preview" \
@@ -407,12 +166,19 @@ curl -s "$BASE_URL/rules/preview" \
   }'
 ```
 
-Look for `value`, `execution_mode`, and `diagnostics`.
+Key fields in the response:
 
-#### 4. Generate a dataset with an aggregate rule
+* `value`
+* `execution_mode`
+* `diagnostics`
 
-`/datasets/generate` creates a generation job and returns the stable `job_id`
-that SynGen or other clients can poll.
+---
+
+## 2. Generate a dataset → Poll the job → Inspect artifacts
+
+This workflow shows full dataset generation, including job tracking and artifact retrieval.
+
+### Step 1: Submit a generation job
 
 ```bash
 curl -s "$BASE_URL/datasets/generate" \
@@ -442,13 +208,15 @@ curl -s "$BASE_URL/datasets/generate" \
 
 The response includes:
 
-- `job_id`
-- `status`
-- `planned_column_sources`
-- `llm_metrics` when any rule was translated from natural language
-- `diagnostics`
+* `job_id`
+* `status`
+* `planned_column_sources`
+* `llm_metrics`, when natural-language translation is used
+* `diagnostics`
 
-#### 5. Poll the job and inspect generated artifacts
+This response is metadata-only. It does not embed the generated row payload.
+
+### Step 2: Poll the job
 
 ```bash
 curl -s "$BASE_URL/jobs/<job_id>"
@@ -456,20 +224,328 @@ curl -s "$BASE_URL/jobs/<job_id>"
 
 The job response includes:
 
-- `result.output_path` for the generated dataset
-- `artifacts` entries for the dataset, manifest, diagnostics, and execution log
-- `llm_metrics` for the natural-language translation session, when applicable
-- `diagnostics` from the sandbox execution path
+* `result.output_path` for the generated dataset on the `rulesgen` host
+* `artifacts` for the dataset, manifest, diagnostics, and execution log
+* `llm_metrics` for the translation session, when applicable
+* `diagnostics` from the execution path
 
-By default, generated files are written under the configured local OSSFS root
-(`.rulesgen-data/ossfs/` unless overridden with environment variables). With
-`RULESGEN_SANDBOX_BACKEND=subprocess`, full dataset generation runs through the
-local subprocess dataset executor. With
-`RULESGEN_SANDBOX_BACKEND=opensandbox`, the same manifest is uploaded into an
-Alibaba OpenSandbox-managed container and the generated dataset is downloaded
-back into the local OSSFS root.
+This JSON response remains metadata-only. Use the download endpoints below to retrieve file contents.
 
-## Useful commands
+### Step 3: Download the generated dataset
+
+```bash
+curl -s "$BASE_URL/jobs/<job_id>/dataset" -o generated_rows.json
+```
+
+To download a specific stored artifact from the same job, use the `artifact_id` from
+`GET /jobs/<job_id>`:
+
+```bash
+curl -s "$BASE_URL/jobs/<job_id>/artifacts/<artifact_id>" -o artifact.bin
+```
+
+By default, generated files are written under the local OSSFS root:
+
+```text
+.rulesgen-data/ossfs/
+```
+
+Execution backend behavior depends on configuration:
+
+* `RULESGEN_SANDBOX_BACKEND=subprocess`
+  Uses the local subprocess dataset executor
+
+* `RULESGEN_SANDBOX_BACKEND=opensandbox`
+  Uploads the same manifest to an Alibaba OpenSandbox-managed container, then downloads the generated dataset back into the local OSSFS root
+
+---
+
+## Configuration
+
+## Required
+
+### `OPENAI_API_KEY`
+
+Required for the default Docker Compose setup because the default LLM gateway backend is LiteLLM.
+
+If you use `./scripts/run_stack.sh`, the script will prompt for this value when missing.
+
+## Optional
+
+### `RULESGEN_LLM_MODEL_NAME`
+
+Overrides the default model defined in Compose.
+
+### `RULESGEN_LLM_GATEWAY_URL`
+
+Leave unset to use the default OpenAI-compatible endpoint:
+
+```text
+https://api.openai.com/v1
+```
+
+Set this only if you are routing through an OpenAI-compatible proxy.
+
+## Where configuration is loaded from
+
+### Docker Compose
+
+Configuration comes from:
+
+* `compose.yaml`
+* `compose.opensandbox.yaml`
+* your shell environment
+
+### Host-run mode
+
+Configuration comes from:
+
+* `.env`
+* your shell environment
+
+See `.env.example` for the supported `RULESGEN_*` settings.
+
+---
+
+## Run modes
+
+## Recommended: Docker Compose with OpenSandbox
+
+This is the mode used by `./scripts/run_stack.sh`.
+
+```bash
+export OPENAI_API_KEY=your-openai-key
+docker compose -f compose.yaml -f compose.opensandbox.yaml up --build
+```
+
+Stop the stack:
+
+```bash
+./scripts/run_stack.sh down
+```
+
+## Docker Compose without OpenSandbox
+
+This mode uses the local subprocess executor only.
+
+```bash
+docker compose up --build
+```
+
+If `RULESGEN_LLM_GATEWAY_BACKEND=litellm`, you must still provide the corresponding provider credentials such as `OPENAI_API_KEY`.
+
+## Host-run API with Compose-run OpenSandbox
+
+This mode is useful for contributors who want to run the API locally while keeping OpenSandbox in Docker.
+
+Start OpenSandbox:
+
+```bash
+docker compose -f compose.yaml -f compose.opensandbox.yaml up --build -d opensandbox-server
+```
+
+Start `rulesgen` on the host:
+
+```bash
+uv sync --extra api --extra dev
+docker build -t rulesgen:local .
+export OPENAI_API_KEY=your-openai-key
+RULESGEN_SANDBOX_BACKEND=opensandbox \
+RULESGEN_OPENSANDBOX_DOMAIN=127.0.0.1:8090 \
+RULESGEN_OPENSANDBOX_PROTOCOL=http \
+RULESGEN_OPENSANDBOX_USE_SERVER_PROXY=false \
+RULESGEN_OPENSANDBOX_IMAGE=rulesgen:local \
+uv run uvicorn rulesgen.main:app --reload
+```
+
+---
+
+## Using rulesgen as a Python library
+
+You can use `rulesgen` without running the API service.
+
+The package exposes high-level entry points for parsing, compilation, preview, and in-process execution.
+
+### Compile and preview a rule locally
+
+```python
+from rulesgen import compile_rule, preview_rule
+
+compiled = compile_rule(
+    '0.1 * col("salary") if col("job_level") >= 5 else 0',
+    target_column="bonus",
+)
+
+preview = preview_rule(
+    compiled,
+    row={"salary": 120000, "job_level": 6},
+    seed=99,
+)
+
+print(preview.value)
+```
+
+### Parse a natural-language rule
+
+```python
+from rulesgen import Settings, SourceType, parse_rule
+
+settings = Settings(
+    llm_gateway_backend="litellm",  # or: "http" / "stub"
+    llm_model_name="gpt-4",
+)
+
+frame = parse_rule(
+    "If job_level is 5 or higher, set bonus to 10 percent of salary.",
+    source_type=SourceType.NATURAL_LANGUAGE,
+    table_name="employees",
+    schema_columns=["salary", "job_level", "bonus"],
+    target_column="bonus",
+    settings=settings,
+)
+
+print(frame.dsl_candidate)
+```
+
+### Execute multiple compiled rules in-process
+
+```python
+from rulesgen import Settings, compile_rule, execute_generation_plan
+
+settings = Settings()
+
+rows = [
+    {"order_id": "A", "line_amount": 10},
+    {"order_id": "A", "line_amount": 5},
+    {"order_id": "B", "line_amount": 7},
+]
+
+compiled_rules = [
+    compile_rule(
+        'col("line_amount") * 2',
+        target_column="line_amount_x2",
+        settings=settings,
+    ),
+    compile_rule(
+        'group_sum(key=col("order_id"), value=col("line_amount"))',
+        target_column="order_total",
+        settings=settings,
+    ),
+]
+
+run = execute_generation_plan(
+    rows=rows,
+    compiled_rules=compiled_rules,
+    seed=17,
+    references={},
+    max_length=settings.dsl_max_length,
+    max_depth=settings.dsl_max_depth,
+    max_nodes=settings.dsl_max_nodes,
+)
+
+print(run.rows)
+print(run.column_sources)
+```
+
+### Copy a generated artifact for a completed job
+
+When the library shares the same local repositories as the API service, you can copy
+completed job artifacts to another local path:
+
+```python
+from rulesgen import Settings, download_job_artifact, download_job_dataset
+
+settings = Settings(
+    jobs_repository_dir=".rulesgen-data/jobs",
+    artifacts_repository_dir=".rulesgen-data/artifacts",
+    ossfs_root_dir=".rulesgen-data/ossfs",
+)
+
+dataset_copy = download_job_dataset(
+    "job-id",
+    destination="downloads/generated_rows.json",
+    settings=settings,
+)
+
+manifest_copy = download_job_artifact(
+    "job-id",
+    "artifact-id",
+    destination="downloads/sandbox_manifest.json",
+    settings=settings,
+)
+
+print(dataset_copy)
+print(manifest_copy)
+```
+
+---
+
+## API reference
+
+### Health
+
+* `GET /health/live`
+* `GET /health/ready`
+
+### Rules
+
+* `POST /rules/parse`
+* `POST /rules/compile`
+* `POST /rules/preview`
+* `POST /rules/execute`
+
+### Datasets and jobs
+
+* `POST /datasets/generate`
+* `POST /jobs`
+* `GET /jobs/{job_id}`
+* `GET /jobs/{job_id}/dataset`
+* `GET /jobs/{job_id}/artifacts/{artifact_id}`
+
+---
+
+## Architecture summary
+
+The HTTP layer is intentionally thin.
+
+* routers depend on services
+* services depend on compiler and repository interfaces
+* execution is limited to validated AST artifacts with a restricted runtime surface
+
+Natural-language parsing always produces an untrusted `semantic_frame` and DSL candidate first. Only validated DSL can be compiled into an executable artifact.
+
+Execution paths are separated by purpose:
+
+* **preview execution** uses the local preview executor and supports row-phase helpers
+* **dataset generation** uses either the subprocess executor or the OpenSandbox adapter
+* both generation modes preserve the same manifest and artifact contract under the configured OSSFS root
+
+---
+
+## What’s included
+
+* production-oriented ASGI application skeleton under `src/rulesgen/`
+* structured logging and request context propagation
+* RFC 9457 problem-details responses
+* versioned API modules for health, rules, datasets, and jobs
+* restricted DSL compilation based on Python AST validation
+* filesystem-backed repositories for rules, jobs, prompt audits, and artifacts
+* local preview execution
+* subprocess dataset execution
+* optional OpenSandbox integration for sandboxed dataset generation
+* tests, CI, and container build support
+
+---
+
+## Development
+
+Install development dependencies:
+
+```bash
+uv sync --extra api --extra dev
+```
+
+Useful commands:
 
 ```bash
 uv sync --extra api --extra dev
@@ -480,33 +556,35 @@ uv run mypy src
 uv run pip-audit
 ```
 
-## Shared project guidance
+---
 
-- Domain vocabulary for agents and contributors lives in `docs/domain-dictionary.md`.
-- Cursor rules for this repo live in `.cursor/rules/`.
+## Release process
 
-## API surface
+Pushes to `main` run CI, build the wheel and sdist, and attach release artifacts to the GitHub Release created by semantic-release.
 
-- `GET /health/live`
-- `GET /health/ready`
-- `POST /rules/parse`
-- `POST /rules/compile`
-- `POST /rules/preview`
-- `POST /rules/execute`
-- `POST /datasets/generate`
-- `POST /jobs`
-- `GET /jobs/{job_id}`
+Before the first automated release, create a baseline tag that matches `project.version` in `pyproject.toml`:
 
-## Architecture notes
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
-The HTTP layer remains thin. Routers depend on services, services depend on compiler and repository interfaces, and the compiler executes only validated AST artifacts with a restricted runtime surface.
+If branch protection requires pull requests on `main`, allow the GitHub Actions app to bypass that requirement so semantic-release can push its version bump commit and publish release assets.
 
-Natural-language parsing flows through an LLM gateway adapter that returns an untrusted `semantic_frame` plus DSL candidate, and the service only compiles the candidate after AST validation succeeds.
+The script below applies the recommended repository and branch-protection settings and prints the one remaining manual UI step:
 
-Preview execution uses the local preview executor for row-phase helpers, while
-full dataset generation uses either the default subprocess dataset executor or
-the Alibaba OpenSandbox adapter, both of which preserve the same manifest and
-artifact contract under the configured local OSSFS root.
+```text
+scripts/configure-github-repo-oss.sh
+```
+
+---
+
+## Project guidance
+
+* Domain vocabulary for contributors and agents lives in `docs/domain-dictionary.md`
+* Cursor rules for this repository live in `.cursor/rules/`
+
+---
 
 ## License
 

@@ -207,6 +207,7 @@ class SubprocessSandboxExecutionAdapter:
                 level=DiagnosticLevel.INFO,
                 code="opensandbox_execute",
                 message="Dataset generation completed in OpenSandbox.",
+                location=str(result_payload.get("output_path") or ""),
             )
         ]
         diagnostics.extend(

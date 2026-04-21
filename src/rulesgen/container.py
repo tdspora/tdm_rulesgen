@@ -28,6 +28,7 @@ from rulesgen.infra.repositories.file_system import (
     FileSystemRuleRepository,
 )
 from rulesgen.infra.semantic_cache import GPTSemanticTranslationCache
+from rulesgen.services.artifact_download_service import ArtifactDownloadService
 from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
@@ -41,6 +42,7 @@ class AppContainer:
     health_service: HealthService
     rules_service: RulesService
     generation_service: GenerationService
+    artifact_download_service: ArtifactDownloadService
     jobs_service: JobsService
 
 
@@ -167,6 +169,11 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         rule_repository=rule_repository,
         sandbox_adapter=sandbox_adapter,
     )
+    artifact_download_service = ArtifactDownloadService(
+        job_repository=job_repository,
+        artifact_repository=artifact_repository,
+        ossfs_store=ossfs_store,
+    )
     jobs_service = JobsService(
         job_repository=job_repository,
         rules_service=rules_service,
@@ -186,6 +193,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         health_service=HealthService(resolved_settings),
         rules_service=rules_service,
         generation_service=generation_service,
+        artifact_download_service=artifact_download_service,
         jobs_service=jobs_service,
     )
 
