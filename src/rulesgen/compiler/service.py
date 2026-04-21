@@ -416,14 +416,9 @@ class RuleCompilerService:
                         )
                     )
                     error_messages = "; ".join(
-                        item.message
-                        for item in diagnostics
-                        if item.level == DiagnosticLevel.ERROR
+                        item.message for item in diagnostics if item.level == DiagnosticLevel.ERROR
                     )
-                    feedback_errors.append(
-                        f"{rule.target_column!r}: "
-                        f"{error_messages}"
-                    )
+                    feedback_errors.append(f"{rule.target_column!r}: {error_messages}")
                 else:
                     dependencies = validated.dependencies
                     functions = validated.functions
@@ -505,9 +500,7 @@ class RuleCompilerService:
                 normalized_expression=trace.normalized_expression,
                 prompt_audit_id=prompt_audit.audit_id if prompt_audit else None,
                 prompt_audit_ids=[audit.audit_id for audit in prompt_audits],
-                prompt_template_version=(
-                    prompt_audit.template_version if prompt_audit else None
-                ),
+                prompt_template_version=(prompt_audit.template_version if prompt_audit else None),
                 model_name=batch_model_name,
                 provider_name=batch_provider_name,
                 metrics=metrics,

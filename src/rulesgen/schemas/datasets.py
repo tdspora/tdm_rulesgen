@@ -38,9 +38,7 @@ class GenerateDatasetRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_rule_targets(self) -> GenerateDatasetRequest:
-        embedded_targets = {
-            item.name for item in self.schema_ if item.has_rule_definition()
-        }
+        embedded_targets = {item.name for item in self.schema_ if item.has_rule_definition()}
         explicit_targets = {item.target_column for item in self.rules}
         duplicate_targets = sorted(embedded_targets & explicit_targets)
         if duplicate_targets:

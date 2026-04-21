@@ -29,9 +29,7 @@ def test_request_validation_uses_problem_details(client) -> None:
     assert body["title"] == "Request Validation Failed"
 
 
-def test_unhandled_errors_log_traceback_with_request_context(
-    client, caplog, monkeypatch
-) -> None:
+def test_unhandled_errors_log_traceback_with_request_context(client, caplog, monkeypatch) -> None:
     def explode(**kwargs: object) -> None:
         del kwargs
         raise RuntimeError("boom")

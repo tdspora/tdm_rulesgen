@@ -152,9 +152,7 @@ class GenerationService:
                     f"Natural-language rule for {target_column!r} did not produce a frame."
                 )
             if frame.dsl_candidate is None:
-                raise ValidationFailed(
-                    self._missing_dsl_message(target_column, frame.diagnostics)
-                )
+                raise ValidationFailed(self._missing_dsl_message(target_column, frame.diagnostics))
             compiled_rule = self.compiler.compile(
                 expression=frame.dsl_candidate,
                 target_column=target_column,
@@ -193,6 +191,5 @@ class GenerationService:
             str(getattr(diagnostic, "message", diagnostic)) for diagnostic in diagnostics
         )
         return (
-            f"Natural-language rule for {target_column!r} did not produce a DSL candidate: "
-            f"{joined}"
+            f"Natural-language rule for {target_column!r} did not produce a DSL candidate: {joined}"
         )

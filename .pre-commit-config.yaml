@@ -7,3 +7,9 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+      - id: ruff-format-check
+        name: ruff format --check
+        entry: uv run ruff format --check .
+        language: system
+        pass_filenames: false
+        types: [python]

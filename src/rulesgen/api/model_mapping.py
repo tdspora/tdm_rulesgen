@@ -85,15 +85,9 @@ def to_domain_rule_drafts_from_schema(
                 target_column=item.name,
                 source_type=domain_source_type,
                 source_text=(
-                    item.source_text
-                    if domain_source_type is SourceType.NATURAL_LANGUAGE
-                    else None
+                    item.source_text if domain_source_type is SourceType.NATURAL_LANGUAGE else None
                 ),
-                expression=(
-                    item.source_text
-                    if domain_source_type is SourceType.DSL
-                    else None
-                ),
+                expression=(item.source_text if domain_source_type is SourceType.DSL else None),
                 artifact_id=item.artifact_id,
             )
         )
@@ -111,14 +105,14 @@ def to_domain_rule_drafts(
                 target_column=item.target_column,
                 source_type=domain_source_type,
                 source_text=(
-                    item.source_text
-                    if domain_source_type is SourceType.NATURAL_LANGUAGE
-                    else None
+                    item.source_text if domain_source_type is SourceType.NATURAL_LANGUAGE else None
                 ),
                 expression=(
                     item.expression
                     if item.expression is not None
-                    else item.source_text if domain_source_type is SourceType.DSL else None
+                    else item.source_text
+                    if domain_source_type is SourceType.DSL
+                    else None
                 ),
                 artifact_id=item.artifact_id,
             )

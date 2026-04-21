@@ -75,7 +75,4 @@ class PromptTemplateLoader:
     def _render_nl_rules(self, rules: list[NaturalLanguageRuleRequest]) -> str:
         if not rules:
             return "<none>"
-        return "\n".join(
-            f"- {rule.target_column}: {rule.source_text}"
-            for rule in rules
-        )
+        return "\n".join(f"- {rule.target_column}: {rule.source_text}" for rule in rules)
