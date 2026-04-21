@@ -11,12 +11,12 @@ from typing import Any, TYPE_CHECKING, Protocol
 import numpy as np
 
 if TYPE_CHECKING:
-    class Cache(Protocol):
+    class Cache:
         def init(self, **kwargs: Any) -> None: ...
 
         def flush(self) -> None: ...
 
-    class Config(Protocol):
+    class Config:
         def __init__(
             self,
             *,
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
             enable_token_counter: bool,
         ) -> None: ...
 
-    class CacheData(Protocol):
+    class CacheData:
         def __init__(
             self,
             *,
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     class DataManager(Protocol):
         def flush(self) -> None: ...
 
-    class SearchDistanceEvaluation(Protocol):
+    class SearchDistanceEvaluation:
         def __init__(self, *, max_distance: float) -> None: ...
 
     def get_prompt(data: Any, **kwargs: Any) -> str: ...

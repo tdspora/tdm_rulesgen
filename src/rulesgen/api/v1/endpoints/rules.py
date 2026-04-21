@@ -121,9 +121,9 @@ def parse_rule(
         explainability_trace=_to_trace_schema(frame.explainability_trace),
         prompt_audit=_to_prompt_audit_schema(frame.prompt_audit),
         prompt_audits=[
-            _to_prompt_audit_schema(item)
+            schema
             for item in frame.prompt_audits
-            if item is not None
+            if (schema := _to_prompt_audit_schema(item)) is not None
         ],
         metrics=to_llm_metrics_schema(frame.metrics),
     )
