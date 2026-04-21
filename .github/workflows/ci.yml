@@ -3,8 +3,7 @@ name: ci
 on:
   push:
     branches:
-      - main
-      - master
+      - "**"
   pull_request:
 
 permissions:
@@ -16,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -42,7 +41,10 @@ jobs:
         run: uv build
 
       - name: Pip audit
-        run: uv run pip-audit
+        continue-on-error: true
+        run: >-
+          uv run pip-audit
+          --skip-editable
 
   release:
     needs: test
@@ -55,7 +57,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true

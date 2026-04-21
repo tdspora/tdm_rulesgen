@@ -16,6 +16,7 @@ from rulesgen.execution.local import LocalExecutionAdapter
 from rulesgen.execution.opensandbox import SubprocessSandboxExecutionAdapter
 from rulesgen.infra.llm_gateway import (
     HttpLLMGatewayClient,
+    LiteLLMGatewayClient,
     LLMGatewayClient,
     StubLLMGatewayClient,
 )
@@ -26,6 +27,7 @@ from rulesgen.infra.repositories.file_system import (
     FileSystemPromptAuditRepository,
     FileSystemRuleRepository,
 )
+from rulesgen.infra.semantic_cache import GPTSemanticTranslationCache
 from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
@@ -51,6 +53,14 @@ def build_gateway_client(
     if audit_repository is None:
         _ensure_directories(resolved_settings.audits_repository_dir)
         audit_repository = FileSystemPromptAuditRepository(resolved_settings.audits_repository_dir)
+    semantic_cache = None
+    if resolved_settings.llm_semantic_cache_enabled:
+        _ensure_directories(resolved_settings.llm_semantic_cache_dir)
+        semantic_cache = GPTSemanticTranslationCache(
+            root_dir=resolved_settings.llm_semantic_cache_dir,
+            similarity_threshold=resolved_settings.llm_semantic_cache_similarity_threshold,
+            embedding_dimension=resolved_settings.llm_semantic_cache_embedding_dimension,
+        )
 
     if resolved_settings.llm_gateway_backend == "http" and resolved_settings.llm_gateway_url:
         return HttpLLMGatewayClient(
@@ -58,6 +68,17 @@ def build_gateway_client(
             timeout_seconds=resolved_settings.llm_gateway_timeout_seconds,
             prompt_template_version=resolved_settings.llm_prompt_template_version,
             audit_repository=audit_repository,
+        )
+
+    if resolved_settings.llm_gateway_backend == "litellm":
+        return LiteLLMGatewayClient(
+            model_name=resolved_settings.llm_model_name,
+            gateway_url=resolved_settings.llm_gateway_url,
+            timeout_seconds=resolved_settings.llm_gateway_timeout_seconds,
+            temperature=resolved_settings.llm_temperature,
+            prompt_template_version=resolved_settings.llm_prompt_template_version,
+            audit_repository=audit_repository,
+            semantic_cache=semantic_cache,
         )
 
     return StubLLMGatewayClient(
@@ -85,6 +106,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         resolved_settings.artifacts_repository_dir,
         resolved_settings.audits_repository_dir,
         resolved_settings.ossfs_root_dir,
+        resolved_settings.llm_semantic_cache_dir,
     )
     prompt_audit_repository = FileSystemPromptAuditRepository(
         resolved_settings.audits_repository_dir

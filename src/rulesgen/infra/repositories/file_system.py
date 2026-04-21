@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +17,9 @@ from rulesgen.domain.exceptions import (
 from rulesgen.domain.models import (
     AggregateHelperSpec,
     ArtifactKind,
+    CacheInsight,
     CompiledRule,
+    CostBreakdown,
     Diagnostic,
     DiagnosticLevel,
     ExplainabilityTrace,
@@ -23,8 +27,10 @@ from rulesgen.domain.models import (
     JobKind,
     JobRecord,
     JobStatus,
+    LLMRequestMetrics,
     PromptAuditRecord,
     SourceType,
+    TokenUsage,
 )
 
 
@@ -33,6 +39,12 @@ def _json_ready(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    # `dataclasses.is_dataclass()` returns True for both dataclass instances and
+    # dataclass *types*, while `asdict()` only accepts instances.
+    if is_dataclass(value) and not isinstance(value, type):
+        return {str(key): _json_ready(item) for key, item in asdict(value).items()}
     if isinstance(value, dict):
         return {str(key): _json_ready(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -80,8 +92,11 @@ def _serialize_trace(trace: ExplainabilityTrace | None) -> dict[str, Any] | None
         "dsl_candidate": trace.dsl_candidate,
         "normalized_expression": trace.normalized_expression,
         "prompt_audit_id": trace.prompt_audit_id,
+        "prompt_audit_ids": trace.prompt_audit_ids,
         "prompt_template_version": trace.prompt_template_version,
         "model_name": trace.model_name,
+        "provider_name": trace.provider_name,
+        "metrics": _serialize_llm_metrics(trace.metrics),
         "metadata": _json_ready(trace.metadata),
     }
 
@@ -96,8 +111,69 @@ def _deserialize_trace(payload: dict[str, Any] | None) -> ExplainabilityTrace | 
         dsl_candidate=payload.get("dsl_candidate"),
         normalized_expression=payload.get("normalized_expression"),
         prompt_audit_id=payload.get("prompt_audit_id"),
+        prompt_audit_ids=list(payload.get("prompt_audit_ids", [])),
         prompt_template_version=payload.get("prompt_template_version"),
         model_name=payload.get("model_name"),
+        provider_name=payload.get("provider_name"),
+        metrics=_deserialize_llm_metrics(payload.get("metrics")),
+        metadata=dict(payload.get("metadata", {})),
+    )
+
+
+def _serialize_llm_metrics(metrics: LLMRequestMetrics | None) -> dict[str, Any] | None:
+    if metrics is None:
+        return None
+    return {
+        "usage": _json_ready(metrics.usage),
+        "cost": _json_ready(metrics.cost),
+        "latency_ms": metrics.latency_ms,
+        "attempts": metrics.attempts,
+        "cache": _json_ready(metrics.cache),
+        "metadata": _json_ready(metrics.metadata),
+    }
+
+
+def _deserialize_llm_metrics(payload: dict[str, Any] | None) -> LLMRequestMetrics | None:
+    if payload is None:
+        return None
+    usage_payload = payload.get("usage")
+    cost_payload = payload.get("cost")
+    cache_payload = payload.get("cache")
+    return LLMRequestMetrics(
+        usage=(
+            TokenUsage(
+                prompt_tokens=usage_payload.get("prompt_tokens"),
+                completion_tokens=usage_payload.get("completion_tokens"),
+                total_tokens=usage_payload.get("total_tokens"),
+                cached_tokens=usage_payload.get("cached_tokens"),
+                raw=dict(usage_payload.get("raw", {})),
+            )
+            if isinstance(usage_payload, dict)
+            else None
+        ),
+        cost=(
+            CostBreakdown(
+                total_cost=cost_payload.get("total_cost"),
+                currency=str(cost_payload.get("currency", "USD")),
+                raw=dict(cost_payload.get("raw", {})),
+            )
+            if isinstance(cost_payload, dict)
+            else None
+        ),
+        latency_ms=payload.get("latency_ms"),
+        attempts=int(payload.get("attempts", 1)),
+        cache=(
+            CacheInsight(
+                backend=cache_payload.get("backend"),
+                enabled=bool(cache_payload.get("enabled", False)),
+                hit=bool(cache_payload.get("hit", False)),
+                scope_key=cache_payload.get("scope_key"),
+                similarity=cache_payload.get("similarity"),
+                metadata=dict(cache_payload.get("metadata", {})),
+            )
+            if isinstance(cache_payload, dict)
+            else None
+        ),
         metadata=dict(payload.get("metadata", {})),
     )
 
@@ -155,6 +231,12 @@ def _serialize_prompt_audit(record: PromptAuditRecord) -> dict[str, Any]:
         "prompt_hash": record.prompt_hash,
         "response_text": record.response_text,
         "suspicious": record.suspicious,
+        "prompt_kind": record.prompt_kind,
+        "attempt_number": record.attempt_number,
+        "model_name": record.model_name,
+        "provider_name": record.provider_name,
+        "latency_ms": record.latency_ms,
+        "metrics": _serialize_llm_metrics(record.metrics),
         "metadata": _json_ready(record.metadata),
         "created_at": record.created_at.isoformat(),
     }
@@ -169,6 +251,12 @@ def _deserialize_prompt_audit(payload: dict[str, Any]) -> PromptAuditRecord:
         prompt_hash=str(payload["prompt_hash"]),
         response_text=payload.get("response_text"),
         suspicious=bool(payload.get("suspicious", False)),
+        prompt_kind=str(payload.get("prompt_kind", "initial")),
+        attempt_number=int(payload.get("attempt_number", 1)),
+        model_name=payload.get("model_name"),
+        provider_name=payload.get("provider_name"),
+        latency_ms=payload.get("latency_ms"),
+        metrics=_deserialize_llm_metrics(payload.get("metrics")),
         metadata=dict(payload.get("metadata", {})),
         created_at=datetime.fromisoformat(payload["created_at"]),
     )
@@ -270,6 +358,7 @@ class FileSystemJobRepository:
             "error": job.error,
             "diagnostics": [_serialize_diagnostic(item) for item in job.diagnostics],
             "artifacts": [_serialize_artifact(item) for item in job.artifacts],
+            "llm_metrics": _serialize_llm_metrics(job.llm_metrics),
         }
 
     def _deserialize(self, payload: dict[str, Any]) -> JobRecord:
@@ -288,6 +377,7 @@ class FileSystemJobRepository:
             error=payload.get("error"),
             diagnostics=[_deserialize_diagnostic(item) for item in payload.get("diagnostics", [])],
             artifacts=[_deserialize_artifact(item) for item in payload.get("artifacts", [])],
+            llm_metrics=_deserialize_llm_metrics(payload.get("llm_metrics")),
         )
 
 

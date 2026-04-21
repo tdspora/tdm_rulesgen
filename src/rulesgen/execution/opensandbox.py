@@ -14,6 +14,7 @@ from rulesgen.domain.models import (
     Diagnostic,
     DiagnosticLevel,
     GeneratedArtifact,
+    LLMRequestMetrics,
     SandboxExecutionResult,
 )
 from rulesgen.domain.repositories import ArtifactRepository
@@ -50,11 +51,56 @@ def serialize_compiled_rule(rule: CompiledRule) -> dict[str, Any]:
             "dsl_candidate": rule.explainability_trace.dsl_candidate,
             "normalized_expression": rule.explainability_trace.normalized_expression,
             "prompt_audit_id": rule.explainability_trace.prompt_audit_id,
+            "prompt_audit_ids": rule.explainability_trace.prompt_audit_ids,
             "prompt_template_version": rule.explainability_trace.prompt_template_version,
             "model_name": rule.explainability_trace.model_name,
+            "provider_name": rule.explainability_trace.provider_name,
+            "metrics": _serialize_llm_metrics(rule.explainability_trace.metrics),
             "metadata": rule.explainability_trace.metadata,
         },
         "created_at": rule.created_at.isoformat(),
+    }
+
+
+def _serialize_llm_metrics(metrics: LLMRequestMetrics | None) -> dict[str, Any] | None:
+    if metrics is None:
+        return None
+    return {
+        "usage": (
+            {
+                "prompt_tokens": metrics.usage.prompt_tokens,
+                "completion_tokens": metrics.usage.completion_tokens,
+                "total_tokens": metrics.usage.total_tokens,
+                "cached_tokens": metrics.usage.cached_tokens,
+                "raw": metrics.usage.raw,
+            }
+            if metrics.usage is not None
+            else None
+        ),
+        "cost": (
+            {
+                "total_cost": metrics.cost.total_cost,
+                "currency": metrics.cost.currency,
+                "raw": metrics.cost.raw,
+            }
+            if metrics.cost is not None
+            else None
+        ),
+        "latency_ms": metrics.latency_ms,
+        "attempts": metrics.attempts,
+        "cache": (
+            {
+                "backend": metrics.cache.backend,
+                "enabled": metrics.cache.enabled,
+                "hit": metrics.cache.hit,
+                "scope_key": metrics.cache.scope_key,
+                "similarity": metrics.cache.similarity,
+                "metadata": metrics.cache.metadata,
+            }
+            if metrics.cache is not None
+            else None
+        ),
+        "metadata": metrics.metadata,
     }
 
 

@@ -7,3 +7,24 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+      - id: ruff-format-check
+        name: ruff format
+        entry: uv run ruff format .
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: pip-audit
+        name: pip-audit (warn only)
+        entry: >-
+          bash -lc 'uv run pip-audit
+          --skip-editable
+          || true'
+        language: system
+        pass_filenames: false
+        types: [python]

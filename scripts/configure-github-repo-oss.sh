@@ -8,7 +8,9 @@
 #
 # Environment (optional):
 #   DEFAULT_BRANCH              default branch to protect (default: main)
-#   STATUS_CHECK_CONTEXT        required Actions check (default: ci / test)
+#   STATUS_CHECK_CONTEXT        legacy single required Actions check override
+#   STATUS_CHECK_CONTEXTS       comma-separated required Actions checks
+#                               (default: test)
 #   GITHUB_ACTIONS_APP_ID       GitHub Actions app id on github.com (default: 15368)
 #   REQUIRED_APPROVAL_COUNT     approving reviews before merge (default: 0)
 

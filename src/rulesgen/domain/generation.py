@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from rulesgen.domain.models import ColumnSource, CompiledRule, SourceType
+from rulesgen.domain.models import (
+    ColumnSource,
+    CompiledRule,
+    LLMRequestMetrics,
+    SchemaColumnDefinition,
+    SourceType,
+)
 
 
 @dataclass(slots=True)
@@ -19,6 +25,8 @@ class RuleDraft:
 class DatasetGenerationRequest:
     row_count: int
     rules: list[RuleDraft]
+    table_name: str | None = None
+    schema: list[SchemaColumnDefinition] = field(default_factory=list)
     schema_columns: list[str] = field(default_factory=list)
     base_rows: list[dict[str, Any]] = field(default_factory=list)
     references: dict[str, list[Any]] = field(default_factory=dict)
@@ -35,7 +43,10 @@ class PlannedRule:
 @dataclass(slots=True)
 class DatasetGenerationPlan:
     row_count: int
+    table_name: str | None
+    schema: list[SchemaColumnDefinition]
     schema_columns: list[str]
     planned_rules: list[PlannedRule]
     column_sources: dict[str, ColumnSource]
     seed: int
+    llm_metrics: LLMRequestMetrics | None = None

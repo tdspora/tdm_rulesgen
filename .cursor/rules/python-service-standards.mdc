@@ -13,3 +13,12 @@ alwaysApply: false
 - Follow the existing service layout under `src/rulesgen` and prefer dependency injection through the app container over direct construction in endpoints.
 - For middleware, stay compatible with the current Starlette/FastAPI stack and prefer pure ASGI-style patterns over shortcut abstractions that hide request flow.
 - Add focused tests when changing parser, validator, runtime helper, API contract, or job orchestration behavior.
+
+## After modifying Python code
+
+- Run the same Ruff checks as CI and fix issues automatically when possible:
+  - `uv run ruff check . --fix`
+  - `uv run ruff format .`
+  - Verify: `uv run ruff check .` and `uv run ruff format --check .`
+- Run the same typecheck as CI:
+  - `uv run mypy src`

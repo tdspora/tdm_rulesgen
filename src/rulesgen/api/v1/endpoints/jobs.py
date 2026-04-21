@@ -5,8 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from rulesgen.api.dependencies import get_current_principal, get_jobs_service
+from rulesgen.api.model_mapping import (
+    to_domain_rule_drafts,
+    to_domain_rule_drafts_from_schema,
+    to_domain_schema,
+    to_llm_metrics_schema,
+)
 from rulesgen.auth.models import Principal
-from rulesgen.domain.generation import RuleDraft
 from rulesgen.domain.models import JobRecord
 from rulesgen.schemas.jobs import CreateJobRequest, JobArtifactSchema, JobResponse
 from rulesgen.schemas.rules import DiagnosticSchema
@@ -42,6 +47,7 @@ def _to_job_response(job: JobRecord) -> JobResponse:
             )
             for item in job.artifacts
         ],
+        llm_metrics=to_llm_metrics_schema(job.llm_metrics),
     )
 
 
@@ -60,19 +66,13 @@ def create_job(
         row=payload.row,
         seed=payload.seed,
         references=payload.references,
+        table_name=payload.table_name,
+        schema=to_domain_schema(payload.schema_),
         schema_columns=payload.schema_columns,
         row_count=payload.row_count,
         base_rows=payload.base_rows,
-        rules=[
-            RuleDraft(
-                target_column=item.target_column,
-                source_type=item.source_type,
-                source_text=item.source_text,
-                expression=item.expression,
-                artifact_id=item.artifact_id,
-            )
-            for item in payload.rules
-        ],
+        rules=to_domain_rule_drafts(payload.rules)
+        + to_domain_rule_drafts_from_schema(payload.schema_),
     )
     return _to_job_response(job)
 
