@@ -11,7 +11,6 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from rulesgen.version_info import package_version
 
-
 DEFAULT_LLM_GATEWAY_URL_TEMPLATE = "https://api.openai.com/v1"
 
 
