@@ -6,11 +6,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Any, TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
 if TYPE_CHECKING:
+
     class Cache:
         def init(self, **kwargs: Any) -> None: ...
 
