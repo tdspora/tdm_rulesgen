@@ -41,7 +41,9 @@ def _json_ready(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, Enum):
         return value.value
-    if is_dataclass(value):
+    # `dataclasses.is_dataclass()` returns True for both dataclass instances and
+    # dataclass *types*, while `asdict()` only accepts instances.
+    if is_dataclass(value) and not isinstance(value, type):
         return {str(key): _json_ready(item) for key, item in asdict(value).items()}
     if isinstance(value, dict):
         return {str(key): _json_ready(item) for key, item in value.items()}

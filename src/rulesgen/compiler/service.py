@@ -308,8 +308,8 @@ class RuleCompilerService:
             if rule.target_column in preserved_valid_items:
                 merged.append(preserved_valid_items[rule.target_column])
                 continue
-            item = by_target.get(rule.target_column)
-            if item is None:
+            received_item = by_target.get(rule.target_column)
+            if received_item is None:
                 errors.append(
                     f"The LLM did not return an element for target column {rule.target_column!r}."
                 )
@@ -325,7 +325,7 @@ class RuleCompilerService:
                     )
                 )
                 continue
-            merged.append(item)
+            merged.append(received_item)
 
         return merged, errors
 

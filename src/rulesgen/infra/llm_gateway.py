@@ -747,7 +747,8 @@ class LiteLLMGatewayClient(_BaseGatewayClient):
         self.audit_repository.save(audit_record)
 
         if (
-            cache_insight is not None
+            self.semantic_cache is not None
+            and cache_insight is not None
             and cache_insight.scope_key is not None
             and previous_response_text is None
         ):

@@ -6,17 +6,73 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, TYPE_CHECKING, Protocol
 
 import numpy as np
-from gptcache import Cache, Config
-from gptcache.adapter.api import get as gptcache_get
-from gptcache.adapter.api import put as gptcache_put
-from gptcache.embedding.base import BaseEmbedding
-from gptcache.manager.data_manager import DataManager
-from gptcache.manager.scalar_data.base import CacheData
-from gptcache.processor.pre import get_prompt
-from gptcache.similarity_evaluation.distance import SearchDistanceEvaluation
+
+if TYPE_CHECKING:
+    class Cache(Protocol):
+        def init(self, **kwargs: Any) -> None: ...
+
+        def flush(self) -> None: ...
+
+    class Config(Protocol):
+        def __init__(
+            self,
+            *,
+            similarity_threshold: float,
+            enable_token_counter: bool,
+        ) -> None: ...
+
+    class CacheData(Protocol):
+        def __init__(
+            self,
+            *,
+            question: str,
+            answers: str,
+            embedding_data: np.ndarray,
+        ) -> None: ...
+
+    class BaseEmbedding(Protocol):
+        @property
+        def dimension(self) -> int: ...
+
+        def to_embeddings(self, data: Any, **kwargs: Any) -> np.ndarray: ...
+
+    class DataManager(Protocol):
+        def flush(self) -> None: ...
+
+    class SearchDistanceEvaluation(Protocol):
+        def __init__(self, *, max_distance: float) -> None: ...
+
+    def get_prompt(data: Any, **kwargs: Any) -> str: ...
+
+    def gptcache_get(
+        prompt: str,
+        *,
+        cache_obj: Cache,
+        hit_callback: Any | None = None,
+        **kwargs: Any,
+    ) -> Any: ...
+
+    def gptcache_put(
+        prompt: str,
+        response: str,
+        *,
+        cache_obj: Cache,
+        **kwargs: Any,
+    ) -> None: ...
+else:
+    from gptcache import Cache, Config  # type: ignore[import-untyped]
+    from gptcache.adapter.api import get as gptcache_get  # type: ignore[import-untyped]
+    from gptcache.adapter.api import put as gptcache_put  # type: ignore[import-untyped]
+    from gptcache.embedding.base import BaseEmbedding  # type: ignore[import-untyped]
+    from gptcache.manager.data_manager import DataManager  # type: ignore[import-untyped]
+    from gptcache.manager.scalar_data.base import CacheData  # type: ignore[import-untyped]
+    from gptcache.processor.pre import get_prompt  # type: ignore[import-untyped]
+    from gptcache.similarity_evaluation.distance import (  # type: ignore[import-untyped]
+        SearchDistanceEvaluation,
+    )
 
 from rulesgen.domain.models import CacheInsight
 

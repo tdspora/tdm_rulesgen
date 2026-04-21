@@ -120,7 +120,11 @@ def parse_rule(
         translation_confidence=frame.translation_confidence,
         explainability_trace=_to_trace_schema(frame.explainability_trace),
         prompt_audit=_to_prompt_audit_schema(frame.prompt_audit),
-        prompt_audits=[_to_prompt_audit_schema(item) for item in frame.prompt_audits if item],
+        prompt_audits=[
+            _to_prompt_audit_schema(item)
+            for item in frame.prompt_audits
+            if item is not None
+        ],
         metrics=to_llm_metrics_schema(frame.metrics),
     )
 
