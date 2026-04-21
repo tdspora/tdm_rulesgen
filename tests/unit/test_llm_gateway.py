@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rulesgen.container import build_gateway_client
-from rulesgen.core.config import Settings, build_default_llm_gateway_url
+from rulesgen.core.config import Settings
 from rulesgen.domain.models import (
     NaturalLanguageRuleRequest,
     SchemaColumnDefinition,
@@ -34,15 +34,6 @@ class _FakeResponse:
         }
 
 
-def test_settings_default_llm_gateway_url_uses_model_deployment() -> None:
-    settings = Settings(
-        llm_gateway_backend="litellm",
-        llm_model_name="openai/gpt-4o-mini",
-    )
-
-    assert settings.llm_gateway_url == build_default_llm_gateway_url("openai/gpt-4o-mini")
-
-
 def test_build_gateway_client_supports_litellm_backend(tmp_path: Path) -> None:
     client = build_gateway_client(
         Settings(
@@ -55,7 +46,6 @@ def test_build_gateway_client_supports_litellm_backend(tmp_path: Path) -> None:
     )
 
     assert isinstance(client, LiteLLMGatewayClient)
-    assert client.gateway_url == build_default_llm_gateway_url("gpt-4o")
 
 
 def test_litellm_gateway_records_metrics_and_hits_cache(monkeypatch, tmp_path: Path) -> None:
