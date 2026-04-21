@@ -81,6 +81,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Ensure git origin uses SSH
+        run: |
+          echo "origin before:"
+          git remote -v
+
+          # actions/checkout with ssh-key should already set origin to SSH, but
+          # some tooling will re-write it to HTTPS. Force SSH to ensure pushes
+          # are attributed to the deploy key actor for ruleset bypass.
+          git remote set-url origin "git@github.com:${{ github.repository }}.git"
+
+          echo "origin after:"
+          git remote -v
+
       - name: Semantic release
         id: semantic-release
         uses: python-semantic-release/python-semantic-release@v10.2.0

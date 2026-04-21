@@ -72,6 +72,88 @@ preview = preview_rule(
 print(preview.value)
 ```
 
+## Using `rulesgen` as a library (no service required)
+
+You can embed `rulesgen` directly in your own Python program without starting the
+FastAPI application. The high-level entry points are exported from the package:
+
+- `compile_rule`: validate + compile a restricted DSL expression into a `CompiledRule`
+- `preview_rule`: run a compiled rule against one row locally (row-phase helpers only)
+- `parse_rule`: turn natural language into a `SemanticFrame` (requires an LLM gateway backend)
+- `execute_generation_plan`: run a set of compiled rules across many rows in-process
+
+### Compile and preview (pure local execution)
+
+This path does not require the API layer or any external services:
+
+```python
+from rulesgen import compile_rule, preview_rule
+
+compiled = compile_rule('0.1 * col("salary") if col("job_level") >= 5 else 0', target_column="bonus")
+preview = preview_rule(compiled, row={"salary": 120000, "job_level": 6}, seed=99)
+print(preview.value)
+```
+
+### Parse natural language (LLM-backed)
+
+If you want to call `parse_rule`, configure the gateway backend via `Settings`
+or environment variables (see `.env.example` for all supported `RULESGEN_*`
+settings):
+
+```python
+from rulesgen import Settings, SourceType, parse_rule
+
+settings = Settings(
+    llm_gateway_backend="stub",  # or: "http" / "litellm"
+    llm_model_name="rulesgen-local-stub",
+)
+
+frame = parse_rule(
+    "If job_level is 5 or higher, set bonus to 10 percent of salary.",
+    source_type=SourceType.NATURAL_LANGUAGE,
+    table_name="employees",
+    schema_columns=["salary", "job_level", "bonus"],
+    target_column="bonus",
+    settings=settings,
+)
+
+print(frame.dsl_candidate)
+```
+
+### Apply multiple rules to a dataset in-process
+
+If you already have base rows and want to apply several compiled rules locally,
+use `execute_generation_plan`:
+
+```python
+from rulesgen import Settings, compile_rule, execute_generation_plan
+
+settings = Settings()
+rows = [
+    {"order_id": "A", "line_amount": 10},
+    {"order_id": "A", "line_amount": 5},
+    {"order_id": "B", "line_amount": 7},
+]
+
+compiled_rules = [
+    compile_rule('col("line_amount") * 2', target_column="line_amount_x2", settings=settings),
+    compile_rule('group_sum(key=col("order_id"), value=col("line_amount"))', target_column="order_total", settings=settings),
+]
+
+run = execute_generation_plan(
+    rows=rows,
+    compiled_rules=compiled_rules,
+    seed=17,
+    references={},
+    max_length=settings.dsl_max_length,
+    max_depth=settings.dsl_max_depth,
+    max_nodes=settings.dsl_max_nodes,
+)
+
+print(run.rows)
+print(run.column_sources)
+```
+
 ## Quick start
 
 ### Run the OpenSandbox-backed flow
