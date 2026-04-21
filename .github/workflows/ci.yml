@@ -50,6 +50,8 @@ jobs:
     needs: test
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.semantic-release.outputs.released }}
     concurrency:
       group: release-${{ github.ref_name }}
       cancel-in-progress: false
@@ -117,9 +119,39 @@ jobs:
           git commit -m "chore: update uv.lock [skip ci]"
           git push
 
+      - name: Upload distribution artifacts
+        if: steps.semantic-release.outputs.released == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: distribution-artifacts
+          path: dist
+          if-no-files-found: error
+
       - name: Upload release assets
         if: steps.semantic-release.outputs.released == 'true'
         uses: python-semantic-release/publish-action@v10.2.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ steps.semantic-release.outputs.tag }}
+
+  publish-pypi:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: distribution-artifacts
+          path: dist
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          user: __token__
+          password: ${{ secrets.PYPI_TOKEN }}
+          print-hash: true
+          verbose: true

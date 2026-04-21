@@ -560,7 +560,12 @@ uv run pip-audit
 
 ## Release process
 
-Pushes to `main` run CI, build the wheel and sdist, and attach release artifacts to the GitHub Release created by semantic-release.
+Pushes to `main` run CI, build the wheel and sdist, create the GitHub Release via semantic-release, attach release artifacts to that release, and publish the same distributions to PyPI.
+
+Before enabling automated releases, configure these repository secrets:
+
+- `DEPLOY_KEY` for the SSH deploy key that semantic-release uses to push version bump commits and tags.
+- `PYPI_TOKEN` for a PyPI API token scoped to the `rulesgen` project.
 
 Before the first automated release, create a baseline tag that matches `project.version` in `pyproject.toml`:
 
