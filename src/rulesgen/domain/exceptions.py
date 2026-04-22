@@ -17,5 +17,9 @@ class ArtifactNotFoundError(RulesgenError):
     pass
 
 
+class DatasetUploadNotFoundError(RulesgenError):
+    pass
+
+
 class PromptAuditNotFoundError(RulesgenError):
     pass

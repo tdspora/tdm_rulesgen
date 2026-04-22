@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sys
 from datetime import datetime
@@ -15,9 +17,12 @@ from rulesgen.domain.models import (
     CostBreakdown,
     ExplainabilityTrace,
     LLMRequestMetrics,
+    SchemaColumnDefinition,
+    SchemaColumnSource,
     SourceType,
     TokenUsage,
 )
+from rulesgen.domain.uploads import DatasetInputFormat
 from rulesgen.execution.engine import execute_generation_plan
 
 
@@ -37,8 +42,12 @@ def main(argv: list[str]) -> int:
             _deserialize_compiled_rule(item, compiler_limits=compiler_limits)
             for item in payload["compiled_rules"]
         ]
+        schema = [_deserialize_schema_column(item) for item in payload.get("schema", [])]
         run = execute_generation_plan(
-            rows=[dict(row) for row in payload["rows"]],
+            rows=_load_rows(
+                input_source=dict(payload["input_source"]),
+                schema=schema,
+            ),
             compiled_rules=compiled_rules,
             seed=int(payload["seed"]),
             references=dict(payload.get("references", {})),
@@ -82,6 +91,87 @@ def main(argv: list[str]) -> int:
     return 0 if result_payload["success"] else 1
 
 
+def _load_rows(
+    *,
+    input_source: dict[str, Any],
+    schema: list[SchemaColumnDefinition],
+) -> list[dict[str, Any]]:
+    input_path = Path(str(input_source["path"]))
+    input_format = DatasetInputFormat(str(input_source["format"]))
+    if input_format is DatasetInputFormat.JSON:
+        rows = _load_json_rows(input_path)
+    else:
+        rows = _load_csv_rows(input_path, schema=schema)
+    expected_row_count = int(input_source.get("row_count", len(rows)))
+    if expected_row_count != len(rows):
+        raise ValueError("Staged input row_count metadata did not match the number of loaded rows.")
+    return rows
+
+
+def _load_json_rows(input_path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("JSON input sources must contain an array of row objects.")
+    rows: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("JSON input sources must contain only row objects.")
+        rows.append({str(key): value for key, value in item.items()})
+    if not rows:
+        raise ValueError("Dataset input files must contain at least one row.")
+    return rows
+
+
+def _load_csv_rows(
+    input_path: Path,
+    *,
+    schema: list[SchemaColumnDefinition],
+) -> list[dict[str, Any]]:
+    reader = csv.DictReader(io.StringIO(input_path.read_text(encoding="utf-8")))
+    if reader.fieldnames is None:
+        raise ValueError("CSV input sources must include a header row.")
+    schema_by_name = {column.name: column for column in schema}
+    rows: list[dict[str, Any]] = []
+    for raw_row in reader:
+        if raw_row is None:
+            continue
+        if None in raw_row:
+            raise ValueError("CSV input rows must match the header columns.")
+        if all(value in (None, "") for value in raw_row.values()):
+            continue
+        row: dict[str, Any] = {}
+        for key, value in raw_row.items():
+            assert key is not None
+            row[str(key)] = _coerce_csv_value(value, schema_by_name.get(str(key)))
+        rows.append(row)
+    if not rows:
+        raise ValueError("Dataset input files must contain at least one row.")
+    return rows
+
+
+def _coerce_csv_value(value: str | None, column: SchemaColumnDefinition | None) -> Any:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if column is not None and stripped == "" and column.nullable:
+        return None
+    if column is None:
+        return value
+    data_type = column.data_type.strip().upper()
+    if data_type in {"INT", "INTEGER", "BIGINT", "SMALLINT"}:
+        return int(stripped)
+    if data_type in {"FLOAT", "DOUBLE", "DECIMAL", "NUMBER", "NUMERIC"}:
+        return float(stripped)
+    if data_type in {"BOOL", "BOOLEAN"}:
+        lowered = stripped.lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            return True
+        if lowered in {"false", "0", "no", "n"}:
+            return False
+        raise ValueError(f"Could not parse boolean value {value!r} for CSV input.")
+    return value
+
+
 def _deserialize_compiled_rule(
     payload: dict[str, Any], *, compiler_limits: dict[str, Any]
 ) -> CompiledRule:
@@ -105,6 +195,16 @@ def _deserialize_compiled_rule(
         dsl_version=str(payload.get("dsl_version", "v1")),
         explainability_trace=_deserialize_trace(payload.get("explainability_trace")),
         created_at=datetime.fromisoformat(payload["created_at"]),
+    )
+
+
+def _deserialize_schema_column(payload: dict[str, Any]) -> SchemaColumnDefinition:
+    return SchemaColumnDefinition(
+        name=str(payload["name"]),
+        data_type=str(payload["data_type"]),
+        nullable=bool(payload["nullable"]),
+        source=SchemaColumnSource(str(payload["source"])),
+        notes=payload.get("notes"),
     )
 
 

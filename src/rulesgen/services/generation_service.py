@@ -30,7 +30,6 @@ class GenerationService:
         self.sandbox_adapter = sandbox_adapter
 
     def build_plan(self, request: DatasetGenerationRequest) -> DatasetGenerationPlan:
-        base_rows = self._materialize_rows(request)
         planned_rules: list[PlannedRule] = []
         effective_schema_columns = self._effective_schema_columns(request)
         nl_frames_by_target = {}
@@ -72,7 +71,7 @@ class GenerationService:
             )
             source = (
                 ColumnSource.HYBRID
-                if any(draft.target_column in row for row in base_rows)
+                if draft.target_column in request.input_source.columns
                 else ColumnSource.RULE_GENERATED
             )
             planned_rules.append(
@@ -90,7 +89,7 @@ class GenerationService:
             column_sources[planned_rule.target_column] = planned_rule.source
 
         return DatasetGenerationPlan(
-            row_count=len(base_rows),
+            row_count=request.input_source.row_count,
             table_name=request.table_name,
             schema=request.schema,
             schema_columns=effective_schema_columns,
@@ -109,8 +108,9 @@ class GenerationService:
         plan = self.build_plan(request)
         sandbox_result = self.sandbox_adapter.execute_dataset(
             job_id=job_id,
-            rows=self._materialize_rows(request),
+            input_source=request.input_source,
             compiled_rules=[planned_rule.compiled_rule for planned_rule in plan.planned_rules],
+            schema=request.schema,
             seed=request.seed,
             references=request.references,
         )
@@ -165,19 +165,6 @@ class GenerationService:
             f"Rule for {target_column!r} requires artifact_id, expression, "
             "or natural-language source_text."
         )
-
-    def _materialize_rows(self, request: DatasetGenerationRequest) -> list[dict[str, Any]]:
-        if request.base_rows:
-            if request.row_count != len(request.base_rows):
-                raise ValidationFailed(
-                    "row_count must match the number of provided base_rows for "
-                    "single-table generation."
-                )
-            return [dict(row) for row in request.base_rows]
-
-        if request.row_count < 1:
-            raise ValidationFailed("row_count must be at least 1.")
-        return [{} for _ in range(request.row_count)]
 
     def _effective_schema_columns(self, request: DatasetGenerationRequest) -> list[str]:
         if request.schema_columns:

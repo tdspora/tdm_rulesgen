@@ -23,6 +23,7 @@ def build_settings(tmp_path: Path) -> Settings:
         rules_repository_dir=tmp_path / "rules",
         jobs_repository_dir=tmp_path / "jobs",
         artifacts_repository_dir=tmp_path / "artifacts",
+        uploads_repository_dir=tmp_path / "uploads",
         audits_repository_dir=tmp_path / "audits",
         ossfs_root_dir=tmp_path / "ossfs",
     )
@@ -93,6 +94,7 @@ def test_package_root_download_helpers_copy_job_artifacts(tmp_path: Path) -> Non
         schema_columns=["order_id"],
         row_count=1,
         base_rows=[{"order_id": "A"}],
+        file_id=None,
         rules=[],
     )
 

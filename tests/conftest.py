@@ -22,6 +22,7 @@ def build_client(
     os.environ["RULESGEN_RULES_REPOSITORY_DIR"] = str(data_dir / "rules")
     os.environ["RULESGEN_JOBS_REPOSITORY_DIR"] = str(data_dir / "jobs")
     os.environ["RULESGEN_ARTIFACTS_REPOSITORY_DIR"] = str(data_dir / "artifacts")
+    os.environ["RULESGEN_UPLOADS_REPOSITORY_DIR"] = str(data_dir / "uploads")
     os.environ["RULESGEN_AUDITS_REPOSITORY_DIR"] = str(data_dir / "audits")
     os.environ["RULESGEN_OSSFS_ROOT_DIR"] = str(data_dir / "ossfs")
     os.environ["RULESGEN_SANDBOX_BACKEND"] = "subprocess"

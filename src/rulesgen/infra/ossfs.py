@@ -20,6 +20,11 @@ class LocalOssfsStore:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def upload_dir(self, file_id: str) -> Path:
+        path = self._resolve(Path("uploads") / file_id)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def write_json(self, job_id: str, filename: str, payload: dict[str, Any]) -> Path:
         path = self.job_dir(job_id) / filename
         self._validate_filename(filename)
@@ -36,6 +41,12 @@ class LocalOssfsStore:
             json.dumps(rows, indent=2, sort_keys=True, default=str),
             encoding="utf-8",
         )
+        return path
+
+    def write_upload_bytes(self, file_id: str, filename: str, payload: bytes) -> Path:
+        self._validate_filename(filename)
+        path = self.upload_dir(file_id) / filename
+        path.write_bytes(payload)
         return path
 
     def read_json(self, path: str | Path) -> dict[str, Any]:

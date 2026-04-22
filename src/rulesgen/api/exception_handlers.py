@@ -6,7 +6,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 
 from rulesgen.api.problem_details import problem_response
-from rulesgen.domain.exceptions import JobNotFoundError, RuleNotFoundError
+from rulesgen.domain.exceptions import (
+    DatasetUploadNotFoundError,
+    JobNotFoundError,
+    RuleNotFoundError,
+)
 from rulesgen.errors import AppError
 
 
@@ -70,4 +74,16 @@ def install_exception_handlers(app: FastAPI) -> None:
             code="job_not_found",
             title="Job Not Found",
             detail=str(exc) or "Job was not found.",
+        )
+
+    @app.exception_handler(DatasetUploadNotFoundError)
+    async def dataset_upload_not_found_handler(  # type: ignore[no-untyped-def]
+        request: Request, exc: DatasetUploadNotFoundError
+    ):
+        return problem_response(
+            request,
+            status_code=HTTPStatus.NOT_FOUND,
+            code="file_not_found",
+            title="File Not Found",
+            detail=str(exc) or "Dataset file was not found.",
         )

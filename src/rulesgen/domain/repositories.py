@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from rulesgen.domain.models import CompiledRule, GeneratedArtifact, JobRecord, PromptAuditRecord
+from rulesgen.domain.uploads import DatasetUploadRecord
 
 
 class RuleRepository(Protocol):
@@ -25,6 +26,12 @@ class ArtifactRepository(Protocol):
     def save_many(self, artifacts: list[GeneratedArtifact]) -> list[GeneratedArtifact]: ...
 
     def list_for_job(self, job_id: str) -> list[GeneratedArtifact]: ...
+
+
+class DatasetUploadRepository(Protocol):
+    def save(self, record: DatasetUploadRecord) -> DatasetUploadRecord: ...
+
+    def get(self, file_id: str) -> DatasetUploadRecord: ...
 
 
 class PromptAuditRepository(Protocol):

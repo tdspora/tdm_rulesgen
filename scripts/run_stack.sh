@@ -114,7 +114,7 @@ if [[ "${1:-}" == "down" ]]; then
   shift || true
 
   # default to opensandbox on stop, since that's the recommended path
-  local -a stack_files=()
+  stack_files=()
   while IFS= read -r -d '' part; do
     stack_files+=("$part")
   done < <(compose_stack_files)

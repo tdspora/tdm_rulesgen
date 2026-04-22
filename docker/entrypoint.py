@@ -8,11 +8,14 @@ from pathlib import Path
 
 APP_USER = "appuser"
 MANAGED_DIRECTORIES = (
+    ("RULESGEN_DATA_DIR", "/home/appuser/.rulesgen-data"),
     ("RULESGEN_RULES_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/rules"),
     ("RULESGEN_JOBS_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/jobs"),
     ("RULESGEN_ARTIFACTS_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/artifacts"),
+    ("RULESGEN_UPLOADS_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/uploads"),
     ("RULESGEN_AUDITS_REPOSITORY_DIR", "/home/appuser/.rulesgen-data/audits"),
     ("RULESGEN_OSSFS_ROOT_DIR", "/home/appuser/.rulesgen-data/ossfs"),
+    ("RULESGEN_SANDBOX_WORKSPACE_DIR", "/home/appuser/.rulesgen-data/opensandbox"),
     ("RULESGEN_LLM_SEMANTIC_CACHE_DIR", "/home/appuser/.rulesgen-data/semantic-cache"),
 )
 

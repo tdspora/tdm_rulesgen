@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 api = [
   "fastapi",
+  "python-multipart>=0.0.26",
   "uvicorn[standard]",
 ]
 dev = [

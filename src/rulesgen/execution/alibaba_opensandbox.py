@@ -25,10 +25,16 @@ from rulesgen.domain.models import (
     DiagnosticLevel,
     GeneratedArtifact,
     SandboxExecutionResult,
+    SchemaColumnDefinition,
 )
 from rulesgen.domain.repositories import ArtifactRepository
+from rulesgen.domain.uploads import DatasetInputSource
 from rulesgen.errors import ValidationFailed
-from rulesgen.execution.opensandbox import serialize_compiled_rule
+from rulesgen.execution.opensandbox import (
+    serialize_compiled_rule,
+    serialize_input_source,
+    serialize_schema_column,
+)
 from rulesgen.infra.ossfs import LocalOssfsStore
 
 logger = logging.getLogger(__name__)
@@ -94,7 +100,7 @@ class SandboxCreator(Protocol):
 @dataclass(frozen=True, slots=True)
 class RemoteSandboxPaths:
     job_dir: PurePosixPath
-    rows_path: PurePosixPath
+    input_path: PurePosixPath
     compiled_rules_path: PurePosixPath
     manifest_path: PurePosixPath
     output_rows_path: PurePosixPath
@@ -160,28 +166,32 @@ class AlibabaOpenSandboxExecutionAdapter:
         self,
         *,
         job_id: str,
-        rows: list[dict[str, Any]],
+        input_source: DatasetInputSource,
         compiled_rules: list[CompiledRule],
+        schema: list[SchemaColumnDefinition],
         seed: int,
         references: dict[str, list[Any]],
     ) -> SandboxExecutionResult:
         now = datetime.now(UTC)
         job_dir = self.ossfs_store.job_dir(job_id)
-        self.ossfs_store.write_rows(job_id, "input_rows.json", rows)
+        local_input_path = self._stage_local_input_source(job_id=job_id, input_source=input_source)
         compiled_rules_payload = [serialize_compiled_rule(rule) for rule in compiled_rules]
         local_compiled_rules_path = self.ossfs_store.write_json(
             job_id,
             "compiled_rules.json",
             {"compiled_rules": compiled_rules_payload},
         )
-        remote_paths = self._build_remote_paths(job_id)
+        remote_paths = self._build_remote_paths(job_id, input_source)
         manifest_payload = {
             "job_id": job_id,
             "seed": seed,
             "references": references,
-            "rows": rows,
+            "input_source": serialize_input_source(
+                input_source,
+                storage_path=remote_paths.input_path.as_posix(),
+            ),
+            "schema": [serialize_schema_column(column) for column in schema],
             "compiled_rules": compiled_rules_payload,
-            "rows_path": remote_paths.rows_path.as_posix(),
             "compiled_rules_path": remote_paths.compiled_rules_path.as_posix(),
             "output_rows_path": remote_paths.output_rows_path.as_posix(),
             "now": now.isoformat(),
@@ -216,7 +226,7 @@ class AlibabaOpenSandboxExecutionAdapter:
                 self._upload_remote_inputs(
                     sandbox=sandbox,
                     remote_paths=remote_paths,
-                    rows=rows,
+                    local_input_path=local_input_path,
                     compiled_rules_payload=compiled_rules_payload,
                     manifest_payload=manifest_payload,
                 )
@@ -354,23 +364,32 @@ class AlibabaOpenSandboxExecutionAdapter:
         host = self.opensandbox_domain.split(":", 1)[0].strip().lower()
         return host in {"127.0.0.1", "localhost"}
 
-    def _build_remote_paths(self, job_id: str) -> RemoteSandboxPaths:
+    def _build_remote_paths(
+        self, job_id: str, input_source: DatasetInputSource
+    ) -> RemoteSandboxPaths:
         job_dir = PurePosixPath(self.opensandbox_workspace_dir) / job_id
         return RemoteSandboxPaths(
             job_dir=job_dir,
-            rows_path=job_dir / "input_rows.json",
+            input_path=job_dir / f"input_rows.{input_source.format.value}",
             compiled_rules_path=job_dir / "compiled_rules.json",
             manifest_path=job_dir / "sandbox_manifest.json",
             output_rows_path=job_dir / "generated_rows.json",
             result_path=job_dir / "sandbox_result.json",
         )
 
+    def _stage_local_input_source(self, *, job_id: str, input_source: DatasetInputSource) -> Path:
+        source_path = Path(input_source.storage_path)
+        destination = self.ossfs_store.job_dir(job_id) / f"input_rows.{input_source.format.value}"
+        if source_path.resolve() != destination.resolve():
+            destination.write_bytes(source_path.read_bytes())
+        return destination
+
     def _upload_remote_inputs(
         self,
         *,
         sandbox: ManagedSandbox,
         remote_paths: RemoteSandboxPaths,
-        rows: list[dict[str, Any]],
+        local_input_path: Path,
         compiled_rules_payload: list[dict[str, Any]],
         manifest_payload: dict[str, Any],
     ) -> None:
@@ -378,8 +397,8 @@ class AlibabaOpenSandboxExecutionAdapter:
             [WriteEntry(path=remote_paths.job_dir.as_posix(), mode=755)]
         )
         sandbox.files.write_file(
-            remote_paths.rows_path.as_posix(),
-            json.dumps(rows, indent=2, sort_keys=True, default=str),
+            remote_paths.input_path.as_posix(),
+            local_input_path.read_bytes(),
             mode=644,
         )
         sandbox.files.write_file(

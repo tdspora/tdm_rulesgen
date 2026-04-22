@@ -7,6 +7,7 @@ from fastapi import Depends, Header, Request
 from rulesgen.auth.models import AuthContext, Principal
 from rulesgen.container import AppContainer
 from rulesgen.services.artifact_download_service import ArtifactDownloadService
+from rulesgen.services.dataset_upload_service import DatasetUploadService
 from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
@@ -39,6 +40,12 @@ def get_artifact_download_service(
     container: Annotated[AppContainer, Depends(get_container)],
 ) -> ArtifactDownloadService:
     return container.artifact_download_service
+
+
+def get_dataset_upload_service(
+    container: Annotated[AppContainer, Depends(get_container)],
+) -> DatasetUploadService:
+    return container.dataset_upload_service
 
 
 async def get_current_principal(
