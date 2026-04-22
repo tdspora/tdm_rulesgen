@@ -77,6 +77,7 @@ def create_job(
         schema_columns=payload.schema_columns,
         row_count=payload.row_count,
         base_rows=payload.base_rows,
+        file_id=payload.file_id,
         rules=to_domain_rule_drafts(payload.rules)
         + to_domain_rule_drafts_from_schema(payload.schema_),
     )

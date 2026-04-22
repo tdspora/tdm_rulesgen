@@ -23,12 +23,14 @@ from rulesgen.infra.llm_gateway import (
 from rulesgen.infra.ossfs import LocalOssfsStore
 from rulesgen.infra.repositories.file_system import (
     FileSystemArtifactRepository,
+    FileSystemDatasetUploadRepository,
     FileSystemJobRepository,
     FileSystemPromptAuditRepository,
     FileSystemRuleRepository,
 )
 from rulesgen.infra.semantic_cache import GPTSemanticTranslationCache
 from rulesgen.services.artifact_download_service import ArtifactDownloadService
+from rulesgen.services.dataset_upload_service import DatasetUploadService
 from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
@@ -42,6 +44,7 @@ class AppContainer:
     health_service: HealthService
     rules_service: RulesService
     generation_service: GenerationService
+    dataset_upload_service: DatasetUploadService
     artifact_download_service: ArtifactDownloadService
     jobs_service: JobsService
 
@@ -106,6 +109,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         resolved_settings.rules_repository_dir,
         resolved_settings.jobs_repository_dir,
         resolved_settings.artifacts_repository_dir,
+        resolved_settings.uploads_repository_dir,
         resolved_settings.audits_repository_dir,
         resolved_settings.ossfs_root_dir,
         resolved_settings.llm_semantic_cache_dir,
@@ -128,8 +132,13 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     )
     job_repository = FileSystemJobRepository(resolved_settings.jobs_repository_dir)
     artifact_repository = FileSystemArtifactRepository(resolved_settings.artifacts_repository_dir)
+    upload_repository = FileSystemDatasetUploadRepository(resolved_settings.uploads_repository_dir)
     execution_adapter = LocalExecutionAdapter()
     ossfs_store = LocalOssfsStore(resolved_settings.ossfs_root_dir)
+    dataset_upload_service = DatasetUploadService(
+        upload_repository=upload_repository,
+        ossfs_store=ossfs_store,
+    )
     sandbox_adapter: DatasetSandboxExecutor
     if resolved_settings.sandbox_backend == "opensandbox":
         sandbox_adapter = AlibabaOpenSandboxExecutionAdapter(
@@ -178,6 +187,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         job_repository=job_repository,
         rules_service=rules_service,
         generation_service=generation_service,
+        dataset_upload_service=dataset_upload_service,
     )
 
     backends: list[AuthBackend]
@@ -193,6 +203,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         health_service=HealthService(resolved_settings),
         rules_service=rules_service,
         generation_service=generation_service,
+        dataset_upload_service=dataset_upload_service,
         artifact_download_service=artifact_download_service,
         jobs_service=jobs_service,
     )

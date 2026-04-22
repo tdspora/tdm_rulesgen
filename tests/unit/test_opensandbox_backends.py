@@ -12,6 +12,8 @@ from opensandbox.models.execd import Execution
 from rulesgen import build_container
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings, get_settings
+from rulesgen.domain.models import SchemaColumnDefinition, SchemaColumnSource
+from rulesgen.domain.uploads import DatasetInputFormat, DatasetInputOrigin, DatasetInputSource
 from rulesgen.errors import ValidationFailed
 from rulesgen.execution.alibaba_opensandbox import AlibabaOpenSandboxExecutionAdapter
 from rulesgen.execution.opensandbox import SubprocessSandboxExecutionAdapter
@@ -39,6 +41,7 @@ def build_repo_settings(tmp_path: Path, **overrides: object) -> Settings:
         rules_repository_dir=tmp_path / "rules",
         jobs_repository_dir=tmp_path / "jobs",
         artifacts_repository_dir=tmp_path / "artifacts",
+        uploads_repository_dir=tmp_path / "uploads",
         audits_repository_dir=tmp_path / "audits",
         ossfs_root_dir=tmp_path / "ossfs",
         **overrides,
@@ -146,6 +149,25 @@ def test_alibaba_opensandbox_adapter_downloads_outputs_and_persists_artifacts(
     artifact_repository = InMemoryArtifactRepository()
     ossfs_store = LocalOssfsStore(tmp_path / "ossfs")
     job_id = "job-success"
+    input_path = ossfs_store.write_rows("staged-input", "rows.json", [{"salary": 10}])
+    input_source = DatasetInputSource(
+        source_id="staged-input",
+        origin=DatasetInputOrigin.UPLOAD,
+        filename="rows.json",
+        media_type="application/json",
+        format=DatasetInputFormat.JSON,
+        row_count=1,
+        columns=["salary"],
+        storage_path=str(input_path),
+    )
+    schema = [
+        SchemaColumnDefinition(
+            name="salary",
+            data_type="INT",
+            nullable=False,
+            source=SchemaColumnSource.BASE,
+        )
+    ]
     remote_job_dir = "/remote/workspace/job-success"
     remote_result_path = f"{remote_job_dir}/sandbox_result.json"
     remote_output_path = f"{remote_job_dir}/generated_rows.json"
@@ -205,8 +227,9 @@ def test_alibaba_opensandbox_adapter_downloads_outputs_and_persists_artifacts(
 
     result = adapter.execute_dataset(
         job_id=job_id,
-        rows=[{"salary": 10}],
+        input_source=input_source,
         compiled_rules=[compiled_rule],
+        schema=schema,
         seed=7,
         references={},
     )
@@ -235,6 +258,25 @@ def test_alibaba_opensandbox_adapter_maps_failures_and_still_cleans_up(tmp_path:
     compiled_rule = compiler.compile(expression='col("salary") * 2', target_column="bonus")
     artifact_repository = InMemoryArtifactRepository()
     ossfs_store = LocalOssfsStore(tmp_path / "ossfs")
+    input_path = ossfs_store.write_rows("staged-input", "rows.json", [{"salary": 10}])
+    input_source = DatasetInputSource(
+        source_id="staged-input",
+        origin=DatasetInputOrigin.UPLOAD,
+        filename="rows.json",
+        media_type="application/json",
+        format=DatasetInputFormat.JSON,
+        row_count=1,
+        columns=["salary"],
+        storage_path=str(input_path),
+    )
+    schema = [
+        SchemaColumnDefinition(
+            name="salary",
+            data_type="INT",
+            nullable=False,
+            source=SchemaColumnSource.BASE,
+        )
+    ]
     remote_result_path = "/remote/workspace/job-failure/sandbox_result.json"
     files = FakeSandboxFiles(
         readable_files={remote_result_path: SandboxException("missing result")}
@@ -273,8 +315,9 @@ def test_alibaba_opensandbox_adapter_maps_failures_and_still_cleans_up(tmp_path:
     with pytest.raises(ValidationFailed, match="OpenSandbox execution failed"):
         adapter.execute_dataset(
             job_id="job-failure",
-            rows=[{"salary": 10}],
+            input_source=input_source,
             compiled_rules=[compiled_rule],
+            schema=schema,
             seed=7,
             references={},
         )

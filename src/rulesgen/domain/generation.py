@@ -10,6 +10,7 @@ from rulesgen.domain.models import (
     SchemaColumnDefinition,
     SourceType,
 )
+from rulesgen.domain.uploads import DatasetInputSource
 
 
 @dataclass(slots=True)
@@ -25,10 +26,10 @@ class RuleDraft:
 class DatasetGenerationRequest:
     row_count: int
     rules: list[RuleDraft]
+    input_source: DatasetInputSource
     table_name: str | None = None
     schema: list[SchemaColumnDefinition] = field(default_factory=list)
     schema_columns: list[str] = field(default_factory=list)
-    base_rows: list[dict[str, Any]] = field(default_factory=list)
     references: dict[str, list[Any]] = field(default_factory=dict)
     seed: int = 0
 

@@ -32,6 +32,7 @@ The fastest way to get started is with Docker Compose.
 - Docker
 - `docker compose`
 - `curl`
+- `jq`
 
 ### Start the stack
 
@@ -52,7 +53,7 @@ Start the stack:
 
 ```bash
 ./scripts/run_stack.sh
-````
+```
 
 If the key is not already set, the script will prompt you for it.
 
@@ -137,14 +138,19 @@ For schema-embedded rule requests, the target column is inferred from the schema
 Use the `dsl_candidate` from the parse response, or submit a DSL expression directly.
 
 ```bash
-curl -s "$BASE_URL/rules/compile" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<'EOF'
+COMPILE_RESPONSE="$(
+  curl -s "$BASE_URL/rules/compile" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'EOF'
 {
   "expression": "0.1 * col('salary') if col('job_level') >= 5 else 0",
   "target_column": "bonus"
 }
 EOF
+)"
+
+export ARTIFACT_ID="$(echo "$COMPILE_RESPONSE" | jq -r '.artifact_id')"
+echo "ARTIFACT_ID=$ARTIFACT_ID"
 ```
 
 Save the returned `artifact_id`. You will use it in the preview step.
@@ -156,14 +162,16 @@ The preview endpoint executes the compiled rule locally and supports row-phase h
 ```bash
 curl -s "$BASE_URL/rules/preview" \
   -H "Content-Type: application/json" \
-  -d '{
-    "artifact_id": "<artifact_id>",
-    "row": {
-      "salary": 120000,
-      "job_level": 6
-    },
-    "seed": 99
-  }'
+  --data-binary @- <<EOF
+{
+  "artifact_id": "$ARTIFACT_ID",
+  "row": {
+    "salary": 120000,
+    "job_level": 6
+  },
+  "seed": 99
+}
+EOF
 ```
 
 Key fields in the response:
@@ -174,39 +182,69 @@ Key fields in the response:
 
 ---
 
-## 2. Generate a dataset → Poll the job → Inspect artifacts
+## 2. Upload a dataset file → Generate a dataset → Poll the job → Inspect artifacts
 
-This workflow shows full dataset generation, including job tracking and artifact retrieval.
+This workflow shows full dataset generation, including staged file upload, job tracking, and artifact retrieval.
 
-### Step 1: Submit a generation job
+### Step 1: Upload a source file
 
 ```bash
-curl -s "$BASE_URL/datasets/generate" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "row_count": 3,
-    "base_rows": [
-      {"order_id": "A", "line_amount": 10},
-      {"order_id": "A", "line_amount": 5},
-      {"order_id": "B", "line_amount": 7}
-    ],
-    "schema": [
-      {"name": "order_id", "type": "STRING", "nullable": false, "source": "syngen"},
-      {"name": "line_amount", "type": "INT", "nullable": false, "source": "syngen"},
-      {
-        "name": "order_total",
-        "type": "INT",
-        "nullable": true,
-        "source": "rule",
-        "source_text": "group_sum(key=col(\"order_id\"), value=col(\"line_amount\"))",
-        "source_type": "domain_specific_language"
-      }
-    ],
-    "seed": 17
-  }'
+UPLOAD_RESPONSE="$(
+  curl -s "$BASE_URL/datasets/uploads" \
+    -F "file=@samples/orders.csv;type=text/csv"
+)"
+
+export FILE_ID="$(echo "$UPLOAD_RESPONSE" | jq -r '.file_id')"
+echo "FILE_ID=$FILE_ID"
 ```
 
 The response includes:
+
+* `file_id`
+* `format`
+* `row_count`
+* `columns`
+
+Save the returned `file_id`. You will use it in the generation request.
+
+### Step 2: Submit a generation job
+
+```bash
+GENERATE_RESPONSE="$(
+  curl -s "$BASE_URL/datasets/generate" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<EOF
+{
+  "file_id": "$FILE_ID",
+  "schema": [
+    {"name": "order_id", "type": "STRING", "nullable": false, "source": "syngen"},
+    {"name": "line_amount", "type": "INT", "nullable": false, "source": "syngen"},
+    {
+      "name": "order_total",
+      "type": "INT",
+      "nullable": true,
+      "source": "rule",
+      "source_text": "group_sum(key=col(\"order_id\"), value=col(\"line_amount\"))",
+      "source_type": "domain_specific_language"
+    }
+  ],
+  "seed": 17
+}
+EOF
+)"
+
+export JOB_ID="$(echo "$GENERATE_RESPONSE" | jq -r '.job_id')"
+echo "JOB_ID=$JOB_ID"
+```
+
+Exactly one of `base_rows` or `file_id` must be provided:
+
+* use `file_id` for staged CSV or JSON uploads
+* use `base_rows` plus `row_count` for inline JSON rows
+
+When `file_id` is used, `row_count` is derived from the uploaded file and must not be supplied.
+
+The generation response includes:
 
 * `job_id`
 * `status`
@@ -216,10 +254,10 @@ The response includes:
 
 This response is metadata-only. It does not embed the generated row payload.
 
-### Step 2: Poll the job
+### Step 3: Poll the job
 
 ```bash
-curl -s "$BASE_URL/jobs/<job_id>"
+curl -s "$BASE_URL/jobs/$JOB_ID"
 ```
 
 The job response includes:
@@ -231,17 +269,24 @@ The job response includes:
 
 This JSON response remains metadata-only. Use the download endpoints below to retrieve file contents.
 
-### Step 3: Download the generated dataset
+### Step 4: Download the generated dataset
 
 ```bash
-curl -s "$BASE_URL/jobs/<job_id>/dataset" -o generated_rows.json
+curl -s "$BASE_URL/jobs/$JOB_ID/dataset" -o generated_rows.json
 ```
 
-To download a specific stored artifact from the same job, use the `artifact_id` from
-`GET /jobs/<job_id>`:
+To download a specific stored artifact from the same job, select an `artifact_id` from
+`GET /jobs/$JOB_ID` and export it (example: download the input manifest):
 
 ```bash
-curl -s "$BASE_URL/jobs/<job_id>/artifacts/<artifact_id>" -o artifact.bin
+export ARTIFACT_ID="$(
+  curl -s "$BASE_URL/jobs/$JOB_ID" \
+    | jq -r '.artifacts[] | select(.kind == "input_manifest") | .artifact_id' \
+    | head -n 1
+)"
+echo "ARTIFACT_ID=$ARTIFACT_ID"
+
+curl -s "$BASE_URL/jobs/$JOB_ID/artifacts/$ARTIFACT_ID" -o artifact.bin
 ```
 
 By default, generated files are written under the local OSSFS root:
@@ -496,6 +541,7 @@ print(manifest_copy)
 
 ### Datasets and jobs
 
+* `POST /datasets/uploads`
 * `POST /datasets/generate`
 * `POST /jobs`
 * `GET /jobs/{job_id}`

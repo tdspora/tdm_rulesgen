@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 
+def _upload_dataset_file(
+    client,
+    *,
+    filename: str,
+    content: bytes,
+    content_type: str,
+):
+    return client.post(
+        "/datasets/uploads",
+        files={"file": (filename, content, content_type)},
+    )
+
+
 def test_health_endpoints(client) -> None:
     live_response = client.get("/health/live")
     ready_response = client.get("/health/ready")
@@ -175,8 +188,11 @@ def test_generate_dataset_flow(client) -> None:
     assert job_response.status_code == 200
     job_body = job_response.json()
     assert job_body["result"]["row_count"] == 3
+    assert job_body["payload"]["input_source"]["origin"] == "inline_base_rows"
+    assert job_body["payload"]["input_source"]["format"] == "json"
     assert any(item["kind"] == "dataset" for item in job_body["artifacts"])
     assert "rows" not in job_body["result"]
+    assert "base_rows" not in job_body["payload"]
 
     dataset_download_response = client.get(f"/jobs/{body['job_id']}/dataset")
     assert dataset_download_response.status_code == 200
@@ -191,6 +207,167 @@ def test_generate_dataset_flow(client) -> None:
     )
     assert artifact_download_response.status_code == 200
     assert artifact_download_response.json()["job_id"] == body["job_id"]
+
+
+def test_upload_dataset_csv_then_generate_by_file_id(client) -> None:
+    upload_response = _upload_dataset_file(
+        client,
+        filename="orders.csv",
+        content=b"order_id,line_amount\nA,10\nA,5\nB,7\n",
+        content_type="text/csv",
+    )
+
+    assert upload_response.status_code == 200
+    upload_body = upload_response.json()
+    assert upload_body["format"] == "csv"
+    assert upload_body["row_count"] == 3
+    assert upload_body["columns"] == ["order_id", "line_amount"]
+
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "file_id": upload_body["file_id"],
+            "schema": [
+                {
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "line_amount",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "order_total",
+                    "type": "INT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": 'group_sum(key=col("order_id"), value=col("line_amount"))',
+                    "source_type": "domain_specific_language",
+                },
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["row_count"] == 3
+
+    job_response = client.get(f"/jobs/{body['job_id']}")
+    assert job_response.status_code == 200
+    job_body = job_response.json()
+    assert job_body["payload"]["file_id"] == upload_body["file_id"]
+    assert job_body["payload"]["row_count"] == 3
+    assert job_body["payload"]["input_source"]["origin"] == "upload"
+
+    dataset_download_response = client.get(f"/jobs/{body['job_id']}/dataset")
+    assert dataset_download_response.status_code == 200
+    rows = dataset_download_response.json()
+    assert [row["order_total"] for row in rows] == [15, 15, 7]
+
+
+def test_upload_dataset_json_then_generate_by_file_id(client) -> None:
+    upload_response = _upload_dataset_file(
+        client,
+        filename="employees.json",
+        content=(b'[{"salary": 100, "job_level": 4}, {"salary": 100, "job_level": 6}]'),
+        content_type="application/json",
+    )
+
+    assert upload_response.status_code == 200
+    upload_body = upload_response.json()
+    assert upload_body["format"] == "json"
+    assert upload_body["row_count"] == 2
+
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "file_id": upload_body["file_id"],
+            "schema": [
+                {
+                    "name": "salary",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "job_level",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "bonus",
+                    "type": "FLOAT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": (
+                        "If job_level is 5 or higher, set bonus to 10 percent of salary."
+                    ),
+                    "source_type": "natural_language",
+                },
+            ],
+            "seed": 11,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["row_count"] == 2
+    assert body["llm_metrics"]["attempts"] == 1
+
+
+def test_create_generate_dataset_job_with_file_id_via_jobs_api(client) -> None:
+    upload_response = _upload_dataset_file(
+        client,
+        filename="orders.json",
+        content=b'[{"order_id": "A", "line_amount": 10}, {"order_id": "B", "line_amount": 7}]',
+        content_type="application/json",
+    )
+    file_id = upload_response.json()["file_id"]
+
+    response = client.post(
+        "/jobs",
+        json={
+            "kind": "generate_dataset",
+            "file_id": file_id,
+            "schema": [
+                {
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "line_amount",
+                    "type": "INT",
+                    "nullable": False,
+                    "source": "syngen",
+                },
+                {
+                    "name": "order_total",
+                    "type": "INT",
+                    "nullable": True,
+                    "source": "rule",
+                    "source_text": 'col("line_amount")',
+                    "source_type": "domain_specific_language",
+                },
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["kind"] == "generate_dataset"
+    assert body["payload"]["file_id"] == file_id
+    assert body["result"]["row_count"] == 2
 
 
 def test_generate_dataset_with_natural_language_rule_returns_llm_metrics(client) -> None:
@@ -239,6 +416,78 @@ def test_generate_dataset_with_natural_language_rule_returns_llm_metrics(client)
     assert job_response.status_code == 200
     job_body = job_response.json()
     assert job_body["llm_metrics"]["attempts"] == 1
+
+
+def test_generate_dataset_rejects_both_base_rows_and_file_id(client) -> None:
+    upload_response = _upload_dataset_file(
+        client,
+        filename="rows.json",
+        content=b'[{"order_id": "A"}]',
+        content_type="application/json",
+    )
+    file_id = upload_response.json()["file_id"]
+
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "row_count": 1,
+            "base_rows": [{"order_id": "A"}],
+            "file_id": file_id,
+            "schema": [
+                {
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                }
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "request_validation_failed"
+
+
+def test_generate_dataset_rejects_missing_base_rows_and_file_id(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "schema": [
+                {
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                }
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "request_validation_failed"
+
+
+def test_generate_dataset_returns_not_found_for_unknown_file_id(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "file_id": "missing-file",
+            "schema": [
+                {
+                    "name": "order_id",
+                    "type": "STRING",
+                    "nullable": False,
+                    "source": "syngen",
+                }
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "file_not_found"
 
 
 def test_job_dataset_download_rejects_non_generation_jobs(client) -> None:

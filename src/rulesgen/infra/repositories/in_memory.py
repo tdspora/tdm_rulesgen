@@ -3,11 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 
 from rulesgen.domain.exceptions import (
+    DatasetUploadNotFoundError,
     JobNotFoundError,
     PromptAuditNotFoundError,
     RuleNotFoundError,
 )
 from rulesgen.domain.models import CompiledRule, GeneratedArtifact, JobRecord, PromptAuditRecord
+from rulesgen.domain.uploads import DatasetUploadRecord
 
 
 class InMemoryRuleRepository:
@@ -57,6 +59,21 @@ class InMemoryArtifactRepository:
 
     def list_for_job(self, job_id: str) -> list[GeneratedArtifact]:
         return deepcopy(self._artifacts.get(job_id, []))
+
+
+class InMemoryDatasetUploadRepository:
+    def __init__(self) -> None:
+        self._records: dict[str, DatasetUploadRecord] = {}
+
+    def save(self, record: DatasetUploadRecord) -> DatasetUploadRecord:
+        self._records[record.file_id] = deepcopy(record)
+        return deepcopy(record)
+
+    def get(self, file_id: str) -> DatasetUploadRecord:
+        try:
+            return deepcopy(self._records[file_id])
+        except KeyError as exc:
+            raise DatasetUploadNotFoundError(f"Unknown file_id: {file_id}") from exc
 
 
 class InMemoryPromptAuditRepository:

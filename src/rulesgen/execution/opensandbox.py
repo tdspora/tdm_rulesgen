@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,8 +17,10 @@ from rulesgen.domain.models import (
     GeneratedArtifact,
     LLMRequestMetrics,
     SandboxExecutionResult,
+    SchemaColumnDefinition,
 )
 from rulesgen.domain.repositories import ArtifactRepository
+from rulesgen.domain.uploads import DatasetInputSource
 from rulesgen.errors import ValidationFailed
 from rulesgen.infra.ossfs import LocalOssfsStore
 
@@ -104,6 +107,33 @@ def _serialize_llm_metrics(metrics: LLMRequestMetrics | None) -> dict[str, Any] 
     }
 
 
+def serialize_input_source(
+    input_source: DatasetInputSource,
+    *,
+    storage_path: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "source_id": input_source.source_id,
+        "origin": input_source.origin.value,
+        "filename": input_source.filename,
+        "media_type": input_source.media_type,
+        "format": input_source.format.value,
+        "row_count": input_source.row_count,
+        "columns": list(input_source.columns),
+        "path": storage_path or input_source.storage_path,
+    }
+
+
+def serialize_schema_column(column: SchemaColumnDefinition) -> dict[str, Any]:
+    return {
+        "name": column.name,
+        "data_type": column.data_type,
+        "nullable": column.nullable,
+        "source": column.source.value,
+        "notes": column.notes,
+    }
+
+
 class SubprocessSandboxExecutionAdapter:
     def __init__(
         self,
@@ -128,14 +158,15 @@ class SubprocessSandboxExecutionAdapter:
         self,
         *,
         job_id: str,
-        rows: list[dict[str, Any]],
+        input_source: DatasetInputSource,
         compiled_rules: list[CompiledRule],
+        schema: list[SchemaColumnDefinition],
         seed: int,
         references: dict[str, list[Any]],
     ) -> SandboxExecutionResult:
         now = datetime.now(UTC)
         job_dir = self.ossfs_store.job_dir(job_id)
-        rows_path = self.ossfs_store.write_rows(job_id, "input_rows.json", rows)
+        staged_input_path = self._stage_input_source(job_id=job_id, input_source=input_source)
         compiled_rules_payload = [serialize_compiled_rule(rule) for rule in compiled_rules]
         compiled_rules_path = self.ossfs_store.write_json(
             job_id,
@@ -146,9 +177,12 @@ class SubprocessSandboxExecutionAdapter:
             "job_id": job_id,
             "seed": seed,
             "references": references,
-            "rows": rows,
+            "input_source": serialize_input_source(
+                input_source,
+                storage_path=str(staged_input_path),
+            ),
+            "schema": [serialize_schema_column(column) for column in schema],
             "compiled_rules": compiled_rules_payload,
-            "rows_path": str(rows_path),
             "compiled_rules_path": str(compiled_rules_path),
             "output_rows_path": str(job_dir / "generated_rows.json"),
             "now": now.isoformat(),
@@ -270,6 +304,13 @@ class SubprocessSandboxExecutionAdapter:
                 "group_rule_order": list(result_payload.get("group_rule_order", [])),
             },
         )
+
+    def _stage_input_source(self, *, job_id: str, input_source: DatasetInputSource) -> Path:
+        source_path = Path(input_source.storage_path)
+        destination = self.ossfs_store.job_dir(job_id) / f"input_rows.{input_source.format.value}"
+        if source_path.resolve() != destination.resolve():
+            shutil.copyfile(source_path, destination)
+        return destination
 
 
 OpenSandboxExecutionAdapter = SubprocessSandboxExecutionAdapter

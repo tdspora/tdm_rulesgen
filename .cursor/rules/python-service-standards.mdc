@@ -14,6 +14,10 @@ alwaysApply: false
 - For middleware, stay compatible with the current Starlette/FastAPI stack and prefer pure ASGI-style patterns over shortcut abstractions that hide request flow.
 - Add focused tests when changing parser, validator, runtime helper, API contract, or job orchestration behavior.
 
+## Before modifying Python code
+- ensure git branch is different from `main`
+- if you are on the `main` branch create a new branch from `main` and use it moving forward. Use either `feature/` or `bugfix/` as a prefix to meaningfull branch name.
+
 ## After modifying Python code
 
 - Run the same Ruff checks as CI and fix issues automatically when possible:

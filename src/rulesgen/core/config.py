@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     rules_repository_dir: Path = Path(".rulesgen-data/rules")
     jobs_repository_dir: Path = Path(".rulesgen-data/jobs")
     artifacts_repository_dir: Path = Path(".rulesgen-data/artifacts")
+    uploads_repository_dir: Path = Path(".rulesgen-data/uploads")
     audits_repository_dir: Path = Path(".rulesgen-data/audits")
     ossfs_root_dir: Path = Path(".rulesgen-data/ossfs")
     sandbox_backend: Literal["subprocess", "opensandbox"] = "subprocess"

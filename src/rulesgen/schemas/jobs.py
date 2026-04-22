@@ -47,10 +47,11 @@ class CreateJobRequest(StrictModel):
     schema_columns: list[str] = Field(default_factory=list)
     row_count: int | None = None
     base_rows: list[dict[str, Any]] = Field(default_factory=list)
+    file_id: str | None = None
     rules: list[JobRuleDraftSchema] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_rule_targets(self) -> CreateJobRequest:
+    def validate_request(self) -> CreateJobRequest:
         embedded_targets = {item.name for item in self.schema_ if item.has_rule_definition()}
         explicit_targets = {item.target_column for item in self.rules}
         duplicate_targets = sorted(embedded_targets & explicit_targets)
@@ -59,6 +60,23 @@ class CreateJobRequest(StrictModel):
                 "Rule definitions cannot be duplicated between schema rows and rules: "
                 + ", ".join(duplicate_targets)
             )
+        if self.kind in {JobKind.GENERATE_DATASET, JobKind.SANDBOX_EXECUTE}:
+            has_base_rows = bool(self.base_rows)
+            has_file_id = self.file_id is not None
+            if has_base_rows == has_file_id:
+                raise ValueError("Exactly one of base_rows or file_id must be provided.")
+            if has_base_rows:
+                if self.row_count is None:
+                    raise ValueError("row_count is required when base_rows are provided.")
+                if self.row_count != len(self.base_rows):
+                    raise ValueError(
+                        "row_count must match the number of provided base_rows for "
+                        "single-table generation."
+                    )
+                if self.row_count < 1:
+                    raise ValueError("row_count must be at least 1.")
+            if has_file_id and self.row_count is not None:
+                raise ValueError("row_count must not be provided when file_id is used.")
         return self
 
 

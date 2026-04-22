@@ -6,7 +6,9 @@ from uuid import uuid4
 from rulesgen.domain.generation import DatasetGenerationRequest, RuleDraft
 from rulesgen.domain.models import JobKind, JobRecord, JobStatus, SchemaColumnDefinition, utc_now
 from rulesgen.domain.repositories import JobRepository
+from rulesgen.domain.uploads import DatasetInputSource
 from rulesgen.errors import ValidationFailed
+from rulesgen.services.dataset_upload_service import DatasetUploadService
 from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.rules_service import RulesService
 
@@ -18,10 +20,12 @@ class JobsService:
         job_repository: JobRepository,
         rules_service: RulesService,
         generation_service: GenerationService,
+        dataset_upload_service: DatasetUploadService,
     ) -> None:
         self.job_repository = job_repository
         self.rules_service = rules_service
         self.generation_service = generation_service
+        self.dataset_upload_service = dataset_upload_service
 
     def create_job(
         self,
@@ -38,11 +42,23 @@ class JobsService:
         schema_columns: list[str],
         row_count: int | None,
         base_rows: list[dict[str, Any]],
+        file_id: str | None,
         rules: list[RuleDraft],
     ) -> JobRecord:
         created_at = utc_now()
+        job_id = str(uuid4())
+        input_source: DatasetInputSource | None = None
+        resolved_row_count = row_count
+        if kind in {JobKind.GENERATE_DATASET, JobKind.SANDBOX_EXECUTE}:
+            input_source = self.dataset_upload_service.resolve_input(
+                job_id=job_id,
+                base_rows=base_rows,
+                row_count=row_count,
+                file_id=file_id,
+            )
+            resolved_row_count = input_source.row_count
         job = JobRecord(
-            job_id=str(uuid4()),
+            job_id=job_id,
             kind=kind,
             status=JobStatus.RUNNING,
             created_at=created_at,
@@ -55,19 +71,13 @@ class JobsService:
                 "seed": seed,
                 "references": references,
                 "table_name": table_name,
-                "schema": [
-                    {
-                        "name": item.name,
-                        "data_type": item.data_type,
-                        "nullable": item.nullable,
-                        "source": item.source.value,
-                        "notes": item.notes,
-                    }
-                    for item in schema
-                ],
+                "schema": [self._serialize_schema_column(item) for item in schema],
                 "schema_columns": schema_columns,
-                "row_count": row_count,
-                "base_rows": base_rows,
+                "row_count": resolved_row_count,
+                "file_id": file_id,
+                "input_source": (
+                    self._serialize_input_source(input_source) if input_source is not None else None
+                ),
                 "rules": [
                     {
                         "target_column": item.target_column,
@@ -94,8 +104,8 @@ class JobsService:
                 table_name=table_name,
                 schema=schema,
                 schema_columns=schema_columns,
-                row_count=row_count,
-                base_rows=base_rows,
+                row_count=resolved_row_count,
+                input_source=input_source,
                 rules=rules,
             )
         except Exception as exc:  # noqa: BLE001
@@ -123,7 +133,7 @@ class JobsService:
         schema: list[SchemaColumnDefinition],
         schema_columns: list[str],
         row_count: int | None,
-        base_rows: list[dict[str, Any]],
+        input_source: DatasetInputSource | None,
         rules: list[RuleDraft],
     ) -> None:
         if job.kind is JobKind.EXECUTE_PREVIEW:
@@ -164,18 +174,20 @@ class JobsService:
             return
 
         if job.kind in {JobKind.GENERATE_DATASET, JobKind.SANDBOX_EXECUTE}:
-            effective_row_count = row_count if row_count is not None else len(base_rows)
+            if input_source is None:
+                raise ValidationFailed("Generation jobs require a resolved input source.")
+            effective_row_count = input_source.row_count
             if effective_row_count <= 0:
                 raise ValidationFailed(
-                    "Generation jobs require row_count > 0 or non-empty base_rows."
+                    "Generation jobs require a staged input source with row_count > 0."
                 )
             request = DatasetGenerationRequest(
                 row_count=effective_row_count,
                 rules=rules,
+                input_source=input_source,
                 table_name=table_name,
                 schema=schema,
                 schema_columns=schema_columns,
-                base_rows=base_rows,
                 references=references,
                 seed=seed,
             )
@@ -193,6 +205,7 @@ class JobsService:
                 },
                 "row_rule_order": sandbox_result.metadata.get("row_rule_order", []),
                 "group_rule_order": sandbox_result.metadata.get("group_rule_order", []),
+                "input_source": self._serialize_input_source(input_source),
             }
             job.diagnostics = sandbox_result.diagnostics
             job.artifacts = sandbox_result.artifacts
@@ -200,3 +213,24 @@ class JobsService:
             return
 
         raise ValidationFailed(f"Unsupported job kind: {job.kind.value}")
+
+    def _serialize_schema_column(self, item: SchemaColumnDefinition) -> dict[str, Any]:
+        return {
+            "name": item.name,
+            "data_type": item.data_type,
+            "nullable": item.nullable,
+            "source": item.source.value,
+            "notes": item.notes,
+        }
+
+    def _serialize_input_source(self, input_source: DatasetInputSource) -> dict[str, Any]:
+        return {
+            "source_id": input_source.source_id,
+            "origin": input_source.origin.value,
+            "filename": input_source.filename,
+            "media_type": input_source.media_type,
+            "format": input_source.format.value,
+            "row_count": input_source.row_count,
+            "columns": list(input_source.columns),
+            "storage_path": input_source.storage_path,
+        }

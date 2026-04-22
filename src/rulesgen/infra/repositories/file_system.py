@@ -10,6 +10,7 @@ from typing import Any
 from rulesgen.compiler.parser import parse_expression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.domain.exceptions import (
+    DatasetUploadNotFoundError,
     JobNotFoundError,
     PromptAuditNotFoundError,
     RuleNotFoundError,
@@ -32,6 +33,7 @@ from rulesgen.domain.models import (
     SourceType,
     TokenUsage,
 )
+from rulesgen.domain.uploads import DatasetInputFormat, DatasetUploadRecord
 
 
 def _json_ready(value: Any) -> Any:
@@ -222,6 +224,32 @@ def _deserialize_artifact(payload: dict[str, Any]) -> GeneratedArtifact:
     )
 
 
+def _serialize_dataset_upload(record: DatasetUploadRecord) -> dict[str, Any]:
+    return {
+        "file_id": record.file_id,
+        "filename": record.filename,
+        "media_type": record.media_type,
+        "format": record.format.value,
+        "row_count": record.row_count,
+        "columns": record.columns,
+        "storage_path": record.storage_path,
+        "created_at": record.created_at.isoformat(),
+    }
+
+
+def _deserialize_dataset_upload(payload: dict[str, Any]) -> DatasetUploadRecord:
+    return DatasetUploadRecord(
+        file_id=str(payload["file_id"]),
+        filename=str(payload["filename"]),
+        media_type=str(payload["media_type"]),
+        format=DatasetInputFormat(payload["format"]),
+        row_count=int(payload["row_count"]),
+        columns=[str(item) for item in payload.get("columns", [])],
+        storage_path=str(payload["storage_path"]),
+        created_at=datetime.fromisoformat(payload["created_at"]),
+    )
+
+
 def _serialize_prompt_audit(record: PromptAuditRecord) -> dict[str, Any]:
     return {
         "audit_id": record.audit_id,
@@ -401,6 +429,22 @@ class FileSystemArtifactRepository:
         if not job_dir.exists():
             return []
         return [_deserialize_artifact(_read_json(path)) for path in sorted(job_dir.glob("*.json"))]
+
+
+class FileSystemDatasetUploadRepository:
+    def __init__(self, root_dir: Path) -> None:
+        self.root_dir = root_dir
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(self, record: DatasetUploadRecord) -> DatasetUploadRecord:
+        _write_json(self.root_dir / f"{record.file_id}.json", _serialize_dataset_upload(record))
+        return record
+
+    def get(self, file_id: str) -> DatasetUploadRecord:
+        path = self.root_dir / f"{file_id}.json"
+        if not path.exists():
+            raise DatasetUploadNotFoundError(f"Unknown file_id: {file_id}")
+        return _deserialize_dataset_upload(_read_json(path))
 
 
 class FileSystemPromptAuditRepository:
