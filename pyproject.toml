@@ -41,11 +41,6 @@ dev = [
   "ruff",
 ]
 
-[tool.hatch.build]
-include = [
-  "src/rulesgen/resources/**/*.md",
-]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/rulesgen"]
 
