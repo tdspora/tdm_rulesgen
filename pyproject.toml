@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rulesgen"
-version = "0.6.0"
+version = "0.6.1"
 description = "Rulesgen library with an optional FastAPI app for safe rule parsing and execution."
 readme = "README.md"
 license = { text = "Apache-2.0" }
