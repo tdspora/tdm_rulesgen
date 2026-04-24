@@ -9,7 +9,7 @@ from rulesgen.domain.models import (
     SchemaColumnDefinition,
     SchemaColumnSource,
 )
-from rulesgen.infra.llm_gateway import LiteLLMGatewayClient
+from rulesgen.infra.llm_gateway import LiteLLMGatewayClient, StubLLMGatewayClient
 from rulesgen.infra.repositories.in_memory import InMemoryPromptAuditRepository
 from rulesgen.infra.semantic_cache import GPTSemanticTranslationCache
 
@@ -38,6 +38,7 @@ def test_build_gateway_client_supports_litellm_backend(tmp_path: Path) -> None:
     client = build_gateway_client(
         Settings(
             llm_gateway_backend="litellm",
+            llm_gateway_url="https://proxy.example/v1",
             llm_model_name="gpt-4o",
             llm_semantic_cache_dir=tmp_path / "cache",
             audits_repository_dir=tmp_path / "audits",
@@ -46,6 +47,26 @@ def test_build_gateway_client_supports_litellm_backend(tmp_path: Path) -> None:
     )
 
     assert isinstance(client, LiteLLMGatewayClient)
+
+
+def test_build_gateway_client_falls_back_to_stub_without_provider_credentials(
+    monkeypatch, tmp_path: Path
+) -> None:
+    for env_var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "AZURE_API_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+
+    client = build_gateway_client(
+        Settings(
+            llm_gateway_backend="litellm",
+            llm_gateway_url="https://api.openai.com/v1",
+            llm_model_name="gpt-4o",
+            llm_semantic_cache_dir=tmp_path / "cache",
+            audits_repository_dir=tmp_path / "audits",
+        ),
+        audit_repository=InMemoryPromptAuditRepository(),
+    )
+
+    assert isinstance(client, StubLLMGatewayClient)
 
 
 def test_litellm_gateway_records_metrics_and_hits_cache(monkeypatch, tmp_path: Path) -> None:

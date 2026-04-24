@@ -39,14 +39,15 @@ The fastest way to get started is with Docker Compose.
 The default setup runs:
 - `rulesgen`
 - OpenSandbox
-- an LLM-backed translation path through LiteLLM
+- an LLM-backed translation path through LiteLLM when provider credentials are present
+- the built-in stub translation backend when provider credentials are absent
 
-One provider credential required (examples):
+Optional provider credentials for LiteLLM (examples):
   - `OPENAI_API_KEY` (OpenAI / OpenAI-compatible)
   - `ANTHROPIC_API_KEY`
   - `GEMINI_API_KEY`
   - `AZURE_API_KEY` (Azure OpenAI; often used with `AZURE_API_VERSION`)
-These are required for the default Docker Compose setup because `RULESGEN_LLM_GATEWAY_BACKEND=litellm`. Docker Compose forwards them into the `rulesgen` container via `${VAR:-}` entries in the compose files.
+`./scripts/run_stack.sh` now falls back to `RULESGEN_LLM_GATEWAY_BACKEND=stub` when none of these credentials are set. Docker Compose still forwards the provider variables into the `rulesgen` container via `${VAR:-}` entries in the compose files.
 
 
 Start the stack:
@@ -55,7 +56,7 @@ Start the stack:
 ./scripts/run_stack.sh
 ```
 
-If the key is not already set, the script will prompt you for it.
+If a provider key is not set, the stack still starts and uses the stub translation backend.
 
 ### Service endpoints
 
@@ -307,13 +308,13 @@ Execution backend behavior depends on configuration:
 
 ## Configuration
 
-## Required
+## Optional
 
 ### `OPENAI_API_KEY`
 
-Required for the default Docker Compose setup because the default LLM gateway backend is LiteLLM.
+Used when you want LiteLLM to call OpenAI or an OpenAI-compatible endpoint.
 
-If you use `./scripts/run_stack.sh`, the script will prompt for this value when missing.
+If you use `./scripts/run_stack.sh` without any provider credentials, the script starts the stack with the stub translation backend instead.
 
 ## Optional
 
@@ -363,6 +364,12 @@ export OPENAI_API_KEY=your-openai-key
 docker compose -f compose.yaml -f compose.opensandbox.yaml up --build
 ```
 
+Without any provider credentials:
+
+```bash
+./scripts/run_stack.sh
+```
+
 Stop the stack:
 
 ```bash
@@ -377,7 +384,7 @@ This mode uses the local subprocess executor only.
 docker compose up --build
 ```
 
-If `RULESGEN_LLM_GATEWAY_BACKEND=litellm`, you must still provide the corresponding provider credentials such as `OPENAI_API_KEY`.
+If you want Docker Compose to start without provider credentials, set `RULESGEN_LLM_GATEWAY_BACKEND=stub` in your shell before running `docker compose up --build`.
 
 ## Host-run API with Compose-run OpenSandbox
 
@@ -394,7 +401,7 @@ Start `rulesgen` on the host:
 ```bash
 uv sync --extra api --extra dev
 docker build -t rulesgen:local .
-export OPENAI_API_KEY=your-openai-key
+export OPENAI_API_KEY=your-openai-key  # omit this and set RULESGEN_LLM_GATEWAY_BACKEND=stub to use the stub backend
 RULESGEN_SANDBOX_BACKEND=opensandbox \
 RULESGEN_OPENSANDBOX_DOMAIN=127.0.0.1:8090 \
 RULESGEN_OPENSANDBOX_PROTOCOL=http \
@@ -601,6 +608,33 @@ uv run ruff format .
 uv run mypy src
 uv run pip-audit
 ```
+
+---
+
+## Documentation
+
+The project documentation site uses MkDocs with the Material theme and sources
+its published pages from `docs/`.
+
+For a full contributor environment with the docs toolchain enabled:
+
+```bash
+uv sync --extra api --extra dev --extra docs --locked
+uv run mkdocs serve
+```
+
+To build the site the same way as the GitHub Pages workflow:
+
+```bash
+uv run mkdocs build --strict
+```
+
+Once GitHub Pages is configured to deploy from GitHub Actions, the published
+site lives at `https://tdspora.github.io/tdm_rulesgen/`.
+
+The Pages site is intentionally smaller than the full set of repository docs.
+Longer design and contributor references remain in the repository and are
+linked from the published site.
 
 ---
 

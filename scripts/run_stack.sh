@@ -20,24 +20,6 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
 
-ensure_openai_key() {
-  if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-    return 0
-  fi
-
-  if [[ -n "${CI:-}" ]]; then
-    die "OPENAI_API_KEY is required (refusing to prompt in CI)."
-  fi
-
-  printf 'OPENAI_API_KEY is not set.\n'
-  printf 'Enter OPENAI_API_KEY (input hidden): '
-  # shellcheck disable=SC2162
-  IFS= read -rs OPENAI_API_KEY
-  printf '\n'
-  [[ -n "$OPENAI_API_KEY" ]] || die "OPENAI_API_KEY cannot be empty."
-  export OPENAI_API_KEY
-}
-
 have_any_llm_credentials() {
   [[ -n "${OPENAI_API_KEY:-}" ]] && return 0
   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0
@@ -46,13 +28,18 @@ have_any_llm_credentials() {
   return 1
 }
 
-ensure_llm_credentials() {
-  if have_any_llm_credentials; then
+resolve_llm_gateway_backend() {
+  if [[ -n "${RULESGEN_LLM_GATEWAY_BACKEND:-}" ]]; then
+    printf '%s\n' "$RULESGEN_LLM_GATEWAY_BACKEND"
     return 0
   fi
 
-  # Default prompt is OpenAI because it's the most common LiteLLM setup.
-  ensure_openai_key
+  if have_any_llm_credentials; then
+    printf 'litellm\n'
+    return 0
+  fi
+
+  printf 'stub\n'
 }
 
 compose() {
@@ -79,9 +66,12 @@ compose_stack_files() {
 main() {
   require_command docker
   docker compose version >/dev/null 2>&1 || die "Missing required command: docker compose"
+  local llm_gateway_backend
+  llm_gateway_backend=$(resolve_llm_gateway_backend)
+  export RULESGEN_LLM_GATEWAY_BACKEND="$llm_gateway_backend"
 
-  if [[ "$STACK" == "opensandbox" ]]; then
-    ensure_llm_credentials
+  if [[ "$llm_gateway_backend" == "stub" ]]; then
+    log "No LLM provider credentials detected; using stub translation backend"
   fi
 
   local -a stack_files=()

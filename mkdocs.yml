@@ -1,0 +1,24 @@
+site_name: rulesgen
+site_description: Secure rule-processing service for synthetic data workflows.
+site_url: https://tdspora.github.io/tdm_rulesgen/
+repo_url: https://github.com/tdspora/tdm_rulesgen
+repo_name: tdspora/tdm_rulesgen
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Quick Start: getting-started.md
+  - Domain Vocabulary: domain-dictionary.md
+  - Repository Docs: repository-docs.md
