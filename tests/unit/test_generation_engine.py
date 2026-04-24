@@ -4,6 +4,7 @@ import pytest
 
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings
+from rulesgen.domain.models import ColumnSource, SchemaColumnDefinition, SchemaColumnSource
 from rulesgen.errors import ValidationFailed
 from rulesgen.execution.engine import execute_generation_plan
 from rulesgen.infra.llm_gateway import StubLLMGatewayClient
@@ -61,3 +62,35 @@ def test_execute_generation_plan_detects_dependency_cycles() -> None:
             max_depth=12,
             max_nodes=128,
         )
+
+
+def test_execute_generation_plan_materializes_schema_only_columns() -> None:
+    run = execute_generation_plan(
+        rows=[{"order_id": "A"}],
+        compiled_rules=[],
+        seed=3,
+        references={},
+        max_length=2_000,
+        max_depth=12,
+        max_nodes=128,
+        schema=[
+            SchemaColumnDefinition(
+                name="order_id",
+                data_type="STRING",
+                nullable=False,
+                source=SchemaColumnSource.BASE,
+            ),
+            SchemaColumnDefinition(
+                name="bonus",
+                data_type="FLOAT",
+                nullable=True,
+                source=SchemaColumnSource.SYNGEN,
+            ),
+        ],
+    )
+
+    assert run.rows == [{"order_id": "A", "bonus": None}]
+    assert run.column_sources == {
+        "order_id": ColumnSource.MODEL_GENERATED,
+        "bonus": ColumnSource.MODEL_GENERATED,
+    }
