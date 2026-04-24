@@ -12,7 +12,7 @@ candidate, validates the DSL into a `compiled_rule`, supports local
 treat LLM output as trusted input, and a rule only becomes executable after
 validation and compilation succeed.
 
-## Who this site is for
+## Who this documentation is for
 
 - Teams authoring rules for synthetic data workflows
 - Contributors extending the service, compiler, or execution adapters
@@ -31,11 +31,5 @@ validation and compilation succeed.
 ## Start here
 
 - [Quick Start](getting-started.md)
-- [Domain Vocabulary](domain-dictionary.md)
+- [Domain Vocabulary](../domain-dictionary.md)
 - [Repository Docs](repository-docs.md)
-
-## Scope of this site
-
-This GitHub Pages site is intentionally small. It covers the fastest path to
-understanding the project and links out to the longer design and contributor
-documents that still live in the repository.
