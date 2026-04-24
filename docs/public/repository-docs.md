@@ -1,8 +1,8 @@
 # Repository Docs
 
-This GitHub Pages site is the lightweight front door for the project. The
-following documents remain in the repository for now and are linked here until
-more of them are migrated into the site.
+These public pages are the lightweight front door for the project. The
+following documents remain in the repository and are linked here instead of
+being duplicated into the public docs site.
 
 - [README](https://github.com/tdspora/tdm_rulesgen/blob/main/README.md):
   complete quick start, workflow examples, configuration, run modes, library
@@ -22,5 +22,5 @@ more of them are migrated into the site.
 - [Uvicorn App Scaffold Notes](https://github.com/tdspora/tdm_rulesgen/blob/main/Recommended%20Scaffold%20for%20a%20Uvicorn-Based%20Python%20REST%20API.md):
   background architecture notes that informed the service layout
 
-The canonical contributor vocabulary for the current implementation remains on
-the local [Domain Vocabulary](domain-dictionary.md) page.
+The canonical contributor vocabulary for the current implementation remains in
+[docs/domain-dictionary.md](../domain-dictionary.md).

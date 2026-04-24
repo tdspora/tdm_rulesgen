@@ -145,7 +145,7 @@ COMPILE_RESPONSE="$(
     --data-binary @- <<'EOF'
 {
   "expression": "0.1 * col('salary') if col('job_level') >= 5 else 0",
-  "target_column": "bonus"
+  "target_column": "bonus2"
 }
 EOF
 )"
@@ -613,28 +613,17 @@ uv run pip-audit
 
 ## Documentation
 
-The project documentation site uses MkDocs with the Material theme and sources
-its published pages from `docs/`.
+Public `rulesgen` site content is authored in `docs/public/`.
 
-For a full contributor environment with the docs toolchain enabled:
+The canonical contributor and agent glossary remains in
+`docs/domain-dictionary.md`.
 
-```bash
-uv sync --extra api --extra dev --extra docs --locked
-uv run mkdocs serve
-```
+Public publishing now happens through the `tdm-docs` Docusaurus site, which
+imports `docs/public/` during its build. This repository no longer builds or
+deploys GitHub Pages directly.
 
-To build the site the same way as the GitHub Pages workflow:
-
-```bash
-uv run mkdocs build --strict
-```
-
-Once GitHub Pages is configured to deploy from GitHub Actions, the published
-site lives at `https://tdspora.github.io/tdm_rulesgen/`.
-
-The Pages site is intentionally smaller than the full set of repository docs.
-Longer design and contributor references remain in the repository and are
-linked from the published site.
+When you update public docs here, rebuild the `tdm-docs` site with this
+repository available as the `RULESGEN_DOCS_SOURCE` input.
 
 ---
 

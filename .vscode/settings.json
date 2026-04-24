@@ -38,5 +38,8 @@
   },
   "terminal.integrated.env.linux": {
     "UV_PROJECT_ENVIRONMENT": ".venv"
-  }
+  },
+  "cursorpyright.analysis.extraPaths": [
+    "${workspaceFolder}/src"
+  ]
 }

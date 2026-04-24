@@ -40,10 +40,6 @@ dev = [
   "hypothesis",
   "ruff",
 ]
-docs = [
-  "mkdocs>=1.6.1",
-  "mkdocs-material>=9.7.6",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rulesgen"]
