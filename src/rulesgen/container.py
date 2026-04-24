@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,14 @@ from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
 from rulesgen.services.rules_service import RulesService
 
+_DEFAULT_LITELLM_GATEWAY_URL = "https://api.openai.com/v1"
+_LLM_PROVIDER_CREDENTIAL_ENV_VARS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "AZURE_API_KEY",
+)
+
 
 @dataclass(slots=True)
 class AppContainer:
@@ -58,8 +67,10 @@ def build_gateway_client(
     if audit_repository is None:
         _ensure_directories(resolved_settings.audits_repository_dir)
         audit_repository = FileSystemPromptAuditRepository(resolved_settings.audits_repository_dir)
+    use_stub_gateway = _should_fallback_to_stub_gateway(resolved_settings)
+
     semantic_cache = None
-    if resolved_settings.llm_semantic_cache_enabled:
+    if resolved_settings.llm_semantic_cache_enabled and not use_stub_gateway:
         _ensure_directories(resolved_settings.llm_semantic_cache_dir)
         semantic_cache = GPTSemanticTranslationCache(
             root_dir=resolved_settings.llm_semantic_cache_dir,
@@ -75,7 +86,7 @@ def build_gateway_client(
             audit_repository=audit_repository,
         )
 
-    if resolved_settings.llm_gateway_backend == "litellm":
+    if resolved_settings.llm_gateway_backend == "litellm" and not use_stub_gateway:
         return LiteLLMGatewayClient(
             model_name=resolved_settings.llm_model_name,
             gateway_url=resolved_settings.llm_gateway_url,
@@ -91,6 +102,20 @@ def build_gateway_client(
         model_name=resolved_settings.llm_model_name,
         audit_repository=audit_repository,
     )
+
+
+def _should_fallback_to_stub_gateway(settings: Settings) -> bool:
+    if settings.llm_gateway_backend != "litellm":
+        return False
+
+    if any(os.getenv(name) for name in _LLM_PROVIDER_CREDENTIAL_ENV_VARS):
+        return False
+
+    gateway_url = (settings.llm_gateway_url or "").rstrip("/")
+    if gateway_url and gateway_url != _DEFAULT_LITELLM_GATEWAY_URL:
+        return False
+
+    return True
 
 
 def build_compiler(
