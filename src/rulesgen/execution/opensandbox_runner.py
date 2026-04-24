@@ -54,6 +54,7 @@ def main(argv: list[str]) -> int:
             max_length=int(compiler_limits["max_length"]),
             max_depth=int(compiler_limits["max_depth"]),
             max_nodes=int(compiler_limits["max_nodes"]),
+            schema=schema,
             now=datetime.fromisoformat(payload["now"]),
         )
         output_rows_path = Path(payload["output_rows_path"])

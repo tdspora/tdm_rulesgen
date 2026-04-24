@@ -10,6 +10,8 @@ from rulesgen.domain.models import (
     JobKind,
     NaturalLanguageRuleRequest,
     SandboxExecutionResult,
+    SchemaColumnDefinition,
+    SchemaColumnSource,
     SourceType,
 )
 from rulesgen.domain.repositories import RuleRepository
@@ -110,7 +112,7 @@ class GenerationService:
             job_id=job_id,
             input_source=request.input_source,
             compiled_rules=[planned_rule.compiled_rule for planned_rule in plan.planned_rules],
-            schema=request.schema,
+            schema=self._effective_execution_schema(request),
             seed=request.seed,
             references=request.references,
         )
@@ -170,6 +172,26 @@ class GenerationService:
         if request.schema_columns:
             return list(request.schema_columns)
         return [column.name for column in request.schema]
+
+    def _effective_execution_schema(
+        self, request: DatasetGenerationRequest
+    ) -> list[SchemaColumnDefinition]:
+        if not request.schema_columns:
+            return list(request.schema)
+
+        schema_by_name = {column.name: column for column in request.schema}
+        return [
+            schema_by_name.get(
+                column_name,
+                SchemaColumnDefinition(
+                    name=column_name,
+                    data_type="UNKNOWN",
+                    nullable=True,
+                    source=SchemaColumnSource.BASE,
+                ),
+            )
+            for column_name in request.schema_columns
+        ]
 
     def _missing_dsl_message(self, target_column: str, diagnostics: list[Any]) -> str:
         if not diagnostics:

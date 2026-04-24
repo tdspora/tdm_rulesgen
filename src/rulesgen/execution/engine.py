@@ -8,7 +8,13 @@ from typing import Any
 from rulesgen.compiler.parser import parse_expression
 from rulesgen.compiler.runtime_spec import RuntimeContext, build_runtime_locals
 from rulesgen.compiler.validator import DSLValidator
-from rulesgen.domain.models import ColumnSource, CompiledRule, Diagnostic, HelperPhase
+from rulesgen.domain.models import (
+    ColumnSource,
+    CompiledRule,
+    Diagnostic,
+    HelperPhase,
+    SchemaColumnDefinition,
+)
 from rulesgen.errors import ValidationFailed
 
 
@@ -52,10 +58,12 @@ def execute_generation_plan(
     max_length: int,
     max_depth: int,
     max_nodes: int,
+    schema: list[SchemaColumnDefinition] | None = None,
     now: datetime | None = None,
 ) -> GenerationRun:
     anchor_now = now or datetime.now(UTC)
-    materialized_rows = [dict(row) for row in rows]
+    execution_schema = list(schema or [])
+    materialized_rows = [_materialize_schema_columns(row, execution_schema) for row in rows]
     row_rules = [rule for rule in compiled_rules if _rule_phase(rule) is HelperPhase.ROW]
     group_rules = [rule for rule in compiled_rules if _rule_phase(rule) is HelperPhase.GROUP]
 
@@ -109,7 +117,7 @@ def execute_generation_plan(
 
     return GenerationRun(
         rows=materialized_rows,
-        column_sources=_classify_columns(rows, compiled_rules),
+        column_sources=_classify_columns(rows, compiled_rules, execution_schema),
         row_rule_order=[rule.target_column or rule.artifact_id for rule in row_order],
         group_rule_order=[rule.target_column or rule.artifact_id for rule in group_order],
     )
@@ -151,11 +159,25 @@ def _topological_order(compiled_rules: list[CompiledRule]) -> list[CompiledRule]
     return ordered
 
 
+def _materialize_schema_columns(
+    row: dict[str, Any],
+    schema: list[SchemaColumnDefinition],
+) -> dict[str, Any]:
+    materialized = dict(row)
+    for column in schema:
+        materialized.setdefault(column.name, None)
+    return materialized
+
+
 def _classify_columns(
-    base_rows: list[dict[str, Any]], compiled_rules: list[CompiledRule]
+    base_rows: list[dict[str, Any]],
+    compiled_rules: list[CompiledRule],
+    schema: list[SchemaColumnDefinition],
 ) -> dict[str, ColumnSource]:
     base_columns = {key for row in base_rows for key in row}
-    sources = {column: ColumnSource.MODEL_GENERATED for column in base_columns}
+    sources = {column.name: ColumnSource.MODEL_GENERATED for column in schema}
+    for column in base_columns:
+        sources.setdefault(column, ColumnSource.MODEL_GENERATED)
     for rule in compiled_rules:
         if rule.target_column is None:
             continue

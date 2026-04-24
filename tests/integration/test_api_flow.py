@@ -209,6 +209,27 @@ def test_generate_dataset_flow(client) -> None:
     assert artifact_download_response.json()["job_id"] == body["job_id"]
 
 
+def test_generate_dataset_includes_schema_columns_in_download(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "row_count": 1,
+            "base_rows": [{"order_id": "A"}],
+            "schema_columns": ["order_id", "bonus"],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["planned_column_sources"]["bonus"] == "model_generated"
+
+    dataset_download_response = client.get(f"/jobs/{body['job_id']}/dataset")
+    assert dataset_download_response.status_code == 200
+    assert dataset_download_response.json() == [{"order_id": "A", "bonus": None}]
+
+
 def test_upload_dataset_csv_then_generate_by_file_id(client) -> None:
     upload_response = _upload_dataset_file(
         client,
