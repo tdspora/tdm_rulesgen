@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../tdm-docs"
+		}
+	],
+	"settings": {
+		"terminal.integrated.env.linux": {
+			"UV_PROJECT_ENVIRONMENT": ".venv"
+		}
+	}
+}

@@ -23,4 +23,4 @@ being duplicated into the public docs site.
   background architecture notes that informed the service layout
 
 The canonical contributor vocabulary for the current implementation remains in
-[docs/domain-dictionary.md](../domain-dictionary.md).
+[docs/agent-harness/glossary.md](../agent-harness/glossary.md).

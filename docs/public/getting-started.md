@@ -37,7 +37,7 @@ curl -s http://127.0.0.1:8000/health/ready
 
 - Follow the end-to-end parse, compile, preview, and generation examples in
   the repository `README.md`.
-- Review the [Domain Vocabulary](../domain-dictionary.md) before changing
+- Review the [Glossary](../agent-harness/glossary.md) before changing
   pipeline terms or contributor-facing docs.
 - Use [Repository Docs](repository-docs.md) for the longer design and
   contributor material that still lives in the repository.

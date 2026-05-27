@@ -31,5 +31,5 @@ validation and compilation succeed.
 ## Start here
 
 - [Quick Start](getting-started.md)
-- [Domain Vocabulary](../domain-dictionary.md)
+- [Glossary](../agent-harness/glossary.md)
 - [Repository Docs](repository-docs.md)

@@ -1,0 +1,31 @@
+# Project Architecture Rules
+
+- Package code lives under `src/rulesgen`. The wheel is built by hatchling (`[tool.hatch.build.targets.wheel] packages = ["src/rulesgen"]`).
+- Tests live under `tests/` with three tiers: `tests/unit/`, `tests/integration/`, `tests/contract/`. `pythonpath = ["src"]` is set in `pyproject.toml`.
+- Module boundaries — keep them intact; do not collapse layers without explicit approval:
+  - `rulesgen/api/` — FastAPI routers, dependencies, exception handlers, Problem Details serialization, versioned routes under `api/v1/`.
+  - `rulesgen/auth/` — pluggable auth backends and resolver. Treat as a security-sensitive boundary.
+  - `rulesgen/compiler/` — DSL parser, AST validator, type system, `RuntimeSpec` builder, compiler service.
+  - `rulesgen/execution/` — runtime engines: `local`, `opensandbox`, `alibaba_opensandbox`, `opensandbox_runner`, `engine`, `interfaces`.
+  - `rulesgen/services/` — application services (rules, generation, jobs, datasets, artifacts, health) orchestrating compiler + execution + infra.
+  - `rulesgen/domain/` — domain models, generation entities, repositories, uploads, exceptions.
+  - `rulesgen/schemas/` — Pydantic v2 request/response schemas (`common`, `datasets`, `health`, `jobs`, `rules`).
+  - `rulesgen/infra/` — LLM gateway (`litellm`), `gptcache` semantic cache, OSS filesystem (`ossfs`), prompt templates, infra repositories.
+  - `rulesgen/core/` — settings (`pydantic-settings`), lifespan, logging, Problem Details base, error types.
+  - `rulesgen/middleware/` — request context and exception mapping middleware.
+  - `rulesgen/library.py` — the public library API (programmatic, no FastAPI required).
+  - `rulesgen/main.py` — FastAPI app factory (`create_app`) and `app` singleton, behind the optional `[api]` extra.
+- FastAPI app composition rules:
+  - All routes hang off `api_router` (`rulesgen/api/router.py`). Add new routes under `api/v1/` and include them via the router.
+  - Exception handling goes through `install_exception_handlers` + `ExceptionMappingMiddleware` — return Problem Details, do not raise bare `HTTPException` with raw strings.
+  - Request-scoped state lives in `RequestContextMiddleware`; do not introduce global state.
+  - App-wide lifecycle hooks belong in `rulesgen/core/lifespan.py`.
+- Reference docs at the repo root describe the user-facing DSL contract:
+  - `NL-to-Python-Generation-DSL.md`
+  - `NL-to-Python-Generation-Overview.md`
+  - `Recommended Scaffold for a Uvicorn-Based Python REST API.md`
+  - Consult these before changing parser, validator, or runtime semantics.
+- Library API (`rulesgen.library`) is consumed by external code — public function signatures and exception types are part of the contract.
+- Generated outputs (`.rulesgen-data/`, `~.rulesgen-data/`, `dist/`, `site/`) must not be edited as source files and must not be committed.
+- For any runtime generation change, consider both library (`rulesgen.library`) and HTTP API (`rulesgen.main`) consumers.
+- Avoid broad refactoring unless required by the task; prefer extending existing patterns over introducing new abstractions.
