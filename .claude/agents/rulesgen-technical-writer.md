@@ -11,7 +11,7 @@ You author and update technical documentation for Rulesgen.
 
 - Public docs: `docs/public/`.
 - Canonical glossary: `docs/agent-harness/glossary.md` — single source of truth for vocabulary.
-- Repo-root design and contributor docs: `README.md`, `NL-to-Python-Generation-DSL.md`, `NL-to-Python-Generation-Overview.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`.
+- Design and contributor docs: `README.md`, `requirements/NL-to-Python-Generation-DSL.md`, `requirements/NL-to-Python-Generation-Overview.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`.
 - Sample-rule READMEs under `samples/`.
 - Public docstrings on the library API surface in `src/rulesgen/library.py` and `src/rulesgen/__init__.py`.
 

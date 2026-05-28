@@ -7,8 +7,8 @@ description: Use for authoring, reviewing, or correcting natural-language → Py
 
 ## Source of truth
 
-- `NL-to-Python-Generation-DSL.md` — formal grammar and accepted forms.
-- `NL-to-Python-Generation-Overview.md` — intent, motivating examples, expected pipeline behavior.
+- `requirements/NL-to-Python-Generation-DSL.md` — formal grammar and accepted forms.
+- `requirements/NL-to-Python-Generation-Overview.md` — intent, motivating examples, expected pipeline behavior.
 - `src/rulesgen/compiler/parser.py` and `src/rulesgen/compiler/validator.py` — actual accepted forms (treat as authoritative when docs disagree, and file a docs fix).
 - `samples/` — committed example rules.
 

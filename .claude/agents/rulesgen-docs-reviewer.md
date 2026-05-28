@@ -22,8 +22,8 @@ Review Rulesgen documentation changes.
   - No `localhost`, developer hostnames, or session-bound URLs.
 - **Security hygiene**: no real LLM endpoints, real LLM gateway URLs, real OpenSandbox / OSS endpoints or keys, real GitHub tokens, real deploy keys, real customer data, real prompts, or real completions. Env vars are referenced by name only.
 - **Backward compatibility**: any change to a documented public contract (`rulesgen.library`, HTTP API, DSL accepted forms, Problem Details shape) carries a Conventional Commit breaking marker and a migration note.
-- **Audience match**: operator docs (`docs/public/`) do not require internal context; contributor docs assume `CONTRIBUTING.md` setup; designer docs (`NL-to-Python-Generation-*.md`) carry the rationale and trust-boundary discussion.
-- **Compiler / sandbox claims**: no doc softens the safety guarantees in `NL-to-Python-Generation-DSL.md`, `NL-to-Python-Generation-Overview.md`, or `SECURITY.md`. Any softening escalates to `rulesgen-security-reviewer`.
+- **Audience match**: operator docs (`docs/public/`) do not require internal context; contributor docs assume `CONTRIBUTING.md` setup; designer docs (`requirements/NL-to-Python-Generation-*.md`) carry the rationale and trust-boundary discussion.
+- **Compiler / sandbox claims**: no doc softens the safety guarantees in `requirements/NL-to-Python-Generation-DSL.md`, `requirements/NL-to-Python-Generation-Overview.md`, or `SECURITY.md`. Any softening escalates to `rulesgen-security-reviewer`.
 - **Forbidden hand-edits**: confirm the diff does not touch `CHANGELOG.md`, `pyproject.toml:project.version`, or the release CI job.
 
 ## Output

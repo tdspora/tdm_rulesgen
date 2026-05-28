@@ -5,13 +5,13 @@ paths:
   - "src/rulesgen/infra/llm_gateway.py"
   - "src/rulesgen/infra/semantic_cache.py"
   - "src/rulesgen/infra/prompt_templates.py"
-  - "NL-to-Python-Generation-DSL.md"
-  - "NL-to-Python-Generation-Overview.md"
+  - "requirements/NL-to-Python-Generation-DSL.md"
+  - "requirements/NL-to-Python-Generation-Overview.md"
 ---
 
 # DSL, Compiler, and LLM Rules
 
-- The DSL contract is documented in `NL-to-Python-Generation-DSL.md` and `NL-to-Python-Generation-Overview.md`. Treat those documents as authoritative — update them in the same change that changes parser, validator, or runtime semantics.
+- The DSL contract is documented in `requirements/NL-to-Python-Generation-DSL.md` and `requirements/NL-to-Python-Generation-Overview.md`. Treat those documents as authoritative — update them in the same change that changes parser, validator, or runtime semantics.
 - Compiler pipeline (`rulesgen/compiler/`):
   - `parser.py` — text → AST.
   - `types.py` — type system / inference.

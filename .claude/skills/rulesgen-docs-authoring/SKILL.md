@@ -15,7 +15,7 @@ Use the names defined in `docs/agent-harness/glossary.md` — the single authori
 |---|---|
 | Operator / first-time user | `docs/public/` |
 | Contributor (internal) | `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` |
-| Designer / reviewer | `NL-to-Python-Generation-DSL.md`, `NL-to-Python-Generation-Overview.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md` |
+| Designer / reviewer | `requirements/NL-to-Python-Generation-DSL.md`, `requirements/NL-to-Python-Generation-Overview.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md` |
 | Glossary (canonical) | `docs/agent-harness/glossary.md` |
 | Sample-rule consumer | `samples/**/*.md` |
 | Library consumer | docstrings on `src/rulesgen/library.py`, `src/rulesgen/__init__.py` |
@@ -50,7 +50,7 @@ Use the names defined in `docs/agent-harness/glossary.md` — the single authori
 Glossary edits are higher-stakes because every other doc references the glossary:
 
 1. **Adding a term**: write the entry, cross-link related terms with `[[other-term]]`, and cite the source file under `src/rulesgen/` if the term is technical or runtime.
-2. **Changing a definition**: `grep -r '\[\[<term>\]\]' docs/ samples/ README.md NL-to-Python-Generation-*.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md` to find every dependent reference; update all of them in the same change.
+2. **Changing a definition**: `grep -r '\[\[<term>\]\]' docs/ samples/ README.md requirements/NL-to-Python-Generation-*.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md` to find every dependent reference; update all of them in the same change.
 3. **Removing a term**: confirm zero references across docs and code before removal.
 
 ## Sample-rule docs
@@ -72,7 +72,7 @@ Sample READMEs in `samples/` must:
 ## Do not
 
 - Do not invent new vocabulary; extend the glossary.
-- Do not weaken safety claims documented in `NL-to-Python-Generation-DSL.md`, `NL-to-Python-Generation-Overview.md`, or `SECURITY.md`.
+- Do not weaken safety claims documented in `requirements/NL-to-Python-Generation-DSL.md`, `requirements/NL-to-Python-Generation-Overview.md`, or `SECURITY.md`.
 - Do not paste real endpoints, real credentials, real customer data, or developer-specific configuration.
 - Do not edit `CHANGELOG.md`, `pyproject.toml:project.version`, or the release CI job.
 

@@ -1,9 +1,9 @@
 """Sybil-based executor for Python code fences in user-facing docs.
 
 Scope is intentionally narrow at first: only files under ``docs/`` are
-collected for sybil execution. Repo-root docs (``README.md``,
-``NL-to-Python-Generation-*.md``, ``CONTRIBUTING.md``) currently contain
-illustrative Python fences that pre-date this contract and have not been
+collected for sybil execution. Repo-root and requirements docs (``README.md``,
+``requirements/NL-to-Python-Generation-*.md``, ``CONTRIBUTING.md``) currently
+contain illustrative Python fences that pre-date this contract and have not been
 audited for sybil-readiness; expanding sybil coverage to them is a
 follow-up to the technical-writer harness rollout. Until then, those docs
 are still validated by the other ``tests/contract/test_docs_*.py`` tests

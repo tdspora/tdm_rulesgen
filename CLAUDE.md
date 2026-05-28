@@ -12,7 +12,7 @@
   - **Compiler** (`rulesgen/compiler/`) — parses and validates the NL-to-Python Generation DSL into a `RuntimeSpec`.
   - **Execution backends** (`rulesgen/execution/`) — local Python execution and OpenSandbox / Alibaba OpenSandbox isolated execution.
   - **LLM gateway** (`rulesgen/infra/llm_gateway.py`) — `litellm` + `gptcache` semantic cache for NL→DSL synthesis.
-- Reference docs at repo root: `NL-to-Python-Generation-DSL.md`, `NL-to-Python-Generation-Overview.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md`.
+- Reference docs: `requirements/NL-to-Python-Generation-DSL.md`, `requirements/NL-to-Python-Generation-Overview.md`, and repo-root `Recommended Scaffold for a Uvicorn-Based Python REST API.md`.
 - Schema/validation is **Pydantic v2** (`rulesgen/schemas/`, `rulesgen/domain/models.py`); error responses follow RFC 7807 Problem Details (`rulesgen/api/problem_details.py`, `tests/contract/test_problem_details.py`).
 - Auth: pluggable backends in `rulesgen/auth/backends/`, resolver in `rulesgen/auth/resolver.py`.
 - Tests live in `tests/unit/`, `tests/integration/`, `tests/contract/`. `pythonpath = ["src"]` is set in `pyproject.toml`.
@@ -46,7 +46,7 @@
 
 ## Default implementation workflow
 
-1. Inspect relevant source, tests, DSL reference docs (`NL-to-Python-Generation-*.md`), and CI definition (`.github/workflows/ci.yml`).
+1. Inspect relevant source, tests, DSL reference docs (`requirements/NL-to-Python-Generation-*.md`), and CI definition (`.github/workflows/ci.yml`).
 2. Produce a concise implementation plan.
 3. Implement the smallest viable change.
 4. Add or update unit tests (`tests/unit/`).

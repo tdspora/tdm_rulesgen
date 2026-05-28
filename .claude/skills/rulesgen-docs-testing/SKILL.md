@@ -169,7 +169,7 @@ markdown-link-check --config .markdown-link-check.json README.md docs/**/*.md
 
 ## When to invoke
 
-- Before every commit that touches a file matched by `documentation-contract.md` `paths:` (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `NL-to-Python-Generation-*.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md`, `docs/**`, `samples/**/*.md`).
+- Before every commit that touches a file matched by `documentation-contract.md` `paths:` (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `requirements/NL-to-Python-Generation-*.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md`, `docs/**`, `samples/**/*.md`).
 - After any change to `src/rulesgen/core/config.py`, `src/rulesgen/api/v1/`, or `src/rulesgen/schemas/` — docs may now be stale.
 - After any glossary edit.
 

@@ -14,7 +14,7 @@ Use the names defined in `docs/agent-harness/glossary.md` — the single authori
 0. **Bootstrap check.** If you just pulled `main`, switched branches, or any subsequent `uv run …` produces `ModuleNotFoundError`, invoke the `rulesgen-bootstrap` skill before continuing.
 1. **Frame the change.** Restate the requested change and identify affected layers: library API (`rulesgen.library`), HTTP API (`rulesgen/api/v1/`), compiler, execution backend, services, infra (LLM gateway, semantic cache, OSSFS), auth, middleware, schemas, DSL contract.
 2. **Research.** Use the `rulesgen-codebase-researcher` agent (or targeted `grep`/`Read`) to locate the relevant files, schemas, and existing tests.
-3. **Read the contract.** If the change touches parser, validator, or runtime semantics, read `NL-to-Python-Generation-DSL.md` and `NL-to-Python-Generation-Overview.md` in full.
+3. **Read the contract.** If the change touches parser, validator, or runtime semantics, read `requirements/NL-to-Python-Generation-DSL.md` and `requirements/NL-to-Python-Generation-Overview.md` in full.
 4. **Plan.** Produce a concise plan listing: files to touch, schemas/models to add or update, tests to add (`tests/unit/`, plus `tests/contract/` or `tests/integration/` if applicable), and any backward-compatibility risk (per the glossary definition of [[backward compatibility]]).
 5. **Implement.** Smallest viable change. Follow `python-quality.md` and `project-architecture.md`.
 6. **Test** per `testing-contract.md`:

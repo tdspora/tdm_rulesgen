@@ -20,9 +20,9 @@
   - Exception handling goes through `install_exception_handlers` + `ExceptionMappingMiddleware` — return Problem Details, do not raise bare `HTTPException` with raw strings.
   - Request-scoped state lives in `RequestContextMiddleware`; do not introduce global state.
   - App-wide lifecycle hooks belong in `rulesgen/core/lifespan.py`.
-- Reference docs at the repo root describe the user-facing DSL contract:
-  - `NL-to-Python-Generation-DSL.md`
-  - `NL-to-Python-Generation-Overview.md`
+- Reference docs describe the user-facing DSL contract:
+  - `requirements/NL-to-Python-Generation-DSL.md`
+  - `requirements/NL-to-Python-Generation-Overview.md`
   - `Recommended Scaffold for a Uvicorn-Based Python REST API.md`
   - Consult these before changing parser, validator, or runtime semantics.
 - Library API (`rulesgen.library`) is consumed by external code — public function signatures and exception types are part of the contract.

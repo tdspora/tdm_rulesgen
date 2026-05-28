@@ -16,7 +16,7 @@ description: Use for Pydantic v2 validation errors, DSL parser/validator rejecti
    - **API request validation** — FastAPI rejected the request before the route. Look at the route signature, the dependency in `rulesgen/api/dependencies.py`, and the schema in `rulesgen/schemas/`.
 3. Confirm the contract:
    - For schema changes: are positive **and** negative tests present?
-   - For DSL changes: does `NL-to-Python-Generation-DSL.md` describe this form?
+   - For DSL changes: does `requirements/NL-to-Python-Generation-DSL.md` describe this form?
    - For API changes: does the error surface as RFC 7807 Problem Details (`tests/contract/`)?
 4. Write or update a failing test that reproduces the bug before changing production code.
 5. Fix in the smallest scope: schema field, validator branch, or parser rule.

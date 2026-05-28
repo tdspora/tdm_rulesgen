@@ -15,7 +15,7 @@ You review Rulesgen design changes for maintainability, backward compatibility, 
 - Clear migration path for any breaking change, with an explicit Conventional Commit `BREAKING CHANGE:` footer and docs update.
 - Compiler / execution trust boundary: the AST validator (`compiler/validator.py`) and sandbox runner (`execution/opensandbox*`) are security-critical; design changes affecting them require security review.
 - LLM gateway and semantic cache changes must keep credentials, endpoints, and prompts out of source and logs.
-- DSL changes must be reflected in `NL-to-Python-Generation-DSL.md` and `NL-to-Python-Generation-Overview.md`.
+- DSL changes must be reflected in `requirements/NL-to-Python-Generation-DSL.md` and `requirements/NL-to-Python-Generation-Overview.md`.
 
 ## Output
 

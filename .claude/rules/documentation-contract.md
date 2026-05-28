@@ -4,7 +4,7 @@ paths:
   - "CONTRIBUTING.md"
   - "SECURITY.md"
   - "CODE_OF_CONDUCT.md"
-  - "NL-to-Python-Generation-*.md"
+  - "requirements/NL-to-Python-Generation-*.md"
   - "Recommended Scaffold for a Uvicorn-Based Python REST API.md"
   - "docs/**"
   - "samples/**/*.md"
