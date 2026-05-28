@@ -17,16 +17,10 @@ End-user documentation is published on TDspora:
 
 - [Overview](https://tdspora.ai/docs/rulesgen/overview)
 - [Quick Start](https://tdspora.ai/docs/rulesgen/getting-started)
-- [Example Workflows](https://tdspora.ai/docs/rulesgen/workflows)
-- [API Reference](https://tdspora.ai/docs/rulesgen/api-reference)
-- [Python Library](https://tdspora.ai/docs/rulesgen/python-library)
-- [Configuration](https://tdspora.ai/docs/rulesgen/configuration)
-- [Run Modes](https://tdspora.ai/docs/rulesgen/run-modes)
-- [Safety Guardrails](https://tdspora.ai/docs/rulesgen/safety-guardrails)
-- [Databricks Models](https://tdspora.ai/docs/rulesgen/databricks)
 - [Repository Docs](https://tdspora.ai/docs/rulesgen/repository-docs)
 
-The source for those public pages lives in [`docs/public/`](docs/public/):
+The source for all public pages, including pages that may not have been
+published to TDspora yet, lives in [`docs/public/`](docs/public/):
 
 - [Overview](docs/public/overview.md)
 - [Quick Start](docs/public/getting-started.md)
@@ -68,9 +62,8 @@ Verify readiness:
 curl -s http://127.0.0.1:8000/health/ready
 ```
 
-Then follow the published
-[Example Workflows](https://tdspora.ai/docs/rulesgen/workflows) or the local
-source version at [`docs/public/workflows.md`](docs/public/workflows.md).
+Then follow the local
+[Example Workflows](docs/public/workflows.md) documentation.
 
 ## What Is Included
 
@@ -113,9 +106,9 @@ Use the Python library when embedding `rulesgen` in another process:
 - `download_job_dataset`
 - `download_job_artifact`
 
-See [API Reference](https://tdspora.ai/docs/rulesgen/api-reference) and
-[Python Library](https://tdspora.ai/docs/rulesgen/python-library) for request
-shapes and examples.
+See [API Reference](docs/public/api-reference.md) and
+[Python Library](docs/public/python-library.md) for request shapes and
+examples.
 
 ## Configuration
 
@@ -125,8 +118,7 @@ environment. In host-run mode, configuration comes from `.env` and the shell
 environment.
 
 Start with [`.env.example`](.env.example), then review
-[Configuration](https://tdspora.ai/docs/rulesgen/configuration) for the full
-settings guide.
+[Configuration](docs/public/configuration.md) for the full settings guide.
 
 ## Development
 
