@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rulesgen"
-version = "0.7.0"
+version = "0.8.0"
 description = "Rulesgen library with an optional FastAPI app for safe rule parsing and execution."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -50,6 +50,7 @@ dev = [
   "ruff",
   "sybil>=6",
 ]
+
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rulesgen"]
@@ -115,6 +116,7 @@ mode = "update"
 [tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
 output_format = "md"
+
 
 [dependency-groups]
 dev = []
