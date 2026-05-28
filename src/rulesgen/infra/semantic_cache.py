@@ -31,14 +31,14 @@ if TYPE_CHECKING:
             *,
             question: str,
             answers: str,
-            embedding_data: np.ndarray,
+            embedding_data: np.ndarray[Any, Any],
         ) -> None: ...
 
     class BaseEmbedding(Protocol):
         @property
         def dimension(self) -> int: ...
 
-        def to_embeddings(self, data: Any, **kwargs: Any) -> np.ndarray: ...
+        def to_embeddings(self, data: Any, **kwargs: Any) -> np.ndarray[Any, Any]: ...
 
     class DataManager(Protocol):
         def flush(self) -> None: ...
@@ -92,7 +92,7 @@ class HashingEmbedding(BaseEmbedding):
     def dimension(self) -> int:
         return self._dimension
 
-    def to_embeddings(self, data: Any, **kwargs: Any) -> np.ndarray:
+    def to_embeddings(self, data: Any, **kwargs: Any) -> np.ndarray[Any, Any]:
         del kwargs
         text = str(data).lower()
         vector = np.zeros(self._dimension, dtype=np.float32)

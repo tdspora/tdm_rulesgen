@@ -26,6 +26,12 @@ from rulesgen.domain.models import (
     TokenUsage,
 )
 from rulesgen.domain.repositories import PromptAuditRepository
+from rulesgen.errors import GuardrailBlocked
+from rulesgen.infra.guardrails import (
+    GuardrailScanner,
+    GuardrailVerdict,
+    NullGuardrailScanner,
+)
 from rulesgen.infra.prompt_templates import PromptTemplateLoader
 from rulesgen.infra.semantic_cache import GPTSemanticTranslationCache
 
@@ -72,11 +78,98 @@ class _BaseGatewayClient:
         prompt_template_version: str,
         audit_repository: PromptAuditRepository,
         semantic_cache: GPTSemanticTranslationCache | None = None,
+        guardrail_scanner: GuardrailScanner | None = None,
+        guardrail_block_message: str = "Input rejected by safety guardrails.",
     ) -> None:
         self.prompt_template_version = prompt_template_version
         self.audit_repository = audit_repository
         self.prompt_loader = PromptTemplateLoader(template_version=prompt_template_version)
         self.semantic_cache = semantic_cache
+        self.guardrail_scanner: GuardrailScanner = guardrail_scanner or NullGuardrailScanner()
+        self.guardrail_block_message = guardrail_block_message
+
+    def _screen_rules(
+        self,
+        *,
+        backend: str,
+        rules: list[NaturalLanguageRuleRequest],
+        attempt_number: int,
+        model_name: str | None,
+        provider_name: str | None,
+        metadata: dict[str, Any],
+    ) -> None:
+        for rule in rules:
+            try:
+                verdict = self.guardrail_scanner.scan(rule.source_text)
+            except Exception as exc:  # noqa: BLE001 - fail-closed contract
+                fail_audit = self._build_audit_record(
+                    backend=backend,
+                    prompt_kind="guardrail_error",
+                    prompt_text="",
+                    response_text="",
+                    suspicious=True,
+                    attempt_number=attempt_number,
+                    model_name=model_name,
+                    provider_name=provider_name,
+                    latency_ms=None,
+                    metrics=None,
+                    metadata={
+                        **metadata,
+                        "guardrail": {
+                            "scanner": self.guardrail_scanner.name,
+                            "error": type(exc).__name__,
+                            "target_column": rule.target_column,
+                        },
+                    },
+                )
+                self.audit_repository.save(fail_audit)
+                raise GuardrailBlocked(self.guardrail_block_message) from exc
+            if verdict.blocked:
+                self._record_guardrail_block(
+                    backend=backend,
+                    rule=rule,
+                    verdict=verdict,
+                    attempt_number=attempt_number,
+                    model_name=model_name,
+                    provider_name=provider_name,
+                    metadata=metadata,
+                )
+                raise GuardrailBlocked(self.guardrail_block_message)
+
+    def _record_guardrail_block(
+        self,
+        *,
+        backend: str,
+        rule: NaturalLanguageRuleRequest,
+        verdict: GuardrailVerdict,
+        attempt_number: int,
+        model_name: str | None,
+        provider_name: str | None,
+        metadata: dict[str, Any],
+    ) -> None:
+        block_audit = self._build_audit_record(
+            backend=backend,
+            prompt_kind="guardrail_blocked",
+            prompt_text="",
+            response_text="",
+            suspicious=True,
+            attempt_number=attempt_number,
+            model_name=model_name,
+            provider_name=provider_name,
+            latency_ms=None,
+            metrics=None,
+            metadata={
+                **metadata,
+                "guardrail": {
+                    "scanner": verdict.scanner,
+                    "risk_score": verdict.risk_score,
+                    "categories": list(verdict.categories),
+                    "target_column": rule.target_column,
+                    "detail": verdict.detail,
+                },
+            },
+        )
+        self.audit_repository.save(block_audit)
 
     def _build_prompts(
         self,
@@ -309,10 +402,14 @@ class StubLLMGatewayClient(_BaseGatewayClient):
         prompt_template_version: str,
         model_name: str,
         audit_repository: PromptAuditRepository,
+        guardrail_scanner: GuardrailScanner | None = None,
+        guardrail_block_message: str = "Input rejected by safety guardrails.",
     ) -> None:
         super().__init__(
             prompt_template_version=prompt_template_version,
             audit_repository=audit_repository,
+            guardrail_scanner=guardrail_scanner,
+            guardrail_block_message=guardrail_block_message,
         )
         self.model_name = model_name
 
@@ -326,6 +423,14 @@ class StubLLMGatewayClient(_BaseGatewayClient):
         error_feedback: str | None = None,
         attempt_number: int = 1,
     ) -> GatewayTranslationBatch:
+        self._screen_rules(
+            backend="stub",
+            rules=rules,
+            attempt_number=attempt_number,
+            model_name=self.model_name,
+            provider_name="stub",
+            metadata={"table_name": table_name, "rule_count": len(rules)},
+        )
         prompt_kind, system_prompt, user_prompt = self._build_prompts(
             table_name=table_name,
             schema=schema,
@@ -335,7 +440,7 @@ class StubLLMGatewayClient(_BaseGatewayClient):
         )
         items = [self._translate_stub(rule.target_column, rule.source_text) for rule in rules]
         response_text = self._serialize_items(items)
-        suspicious = any(_looks_suspicious(rule.source_text) for rule in rules)
+        suspicious = False
         prompt_text = f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
         audit_record = self._build_audit_record(
             backend="stub",
@@ -490,10 +595,14 @@ class HttpLLMGatewayClient(_BaseGatewayClient):
         timeout_seconds: float,
         prompt_template_version: str,
         audit_repository: PromptAuditRepository,
+        guardrail_scanner: GuardrailScanner | None = None,
+        guardrail_block_message: str = "Input rejected by safety guardrails.",
     ) -> None:
         super().__init__(
             prompt_template_version=prompt_template_version,
             audit_repository=audit_repository,
+            guardrail_scanner=guardrail_scanner,
+            guardrail_block_message=guardrail_block_message,
         )
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
@@ -508,6 +617,14 @@ class HttpLLMGatewayClient(_BaseGatewayClient):
         error_feedback: str | None = None,
         attempt_number: int = 1,
     ) -> GatewayTranslationBatch:
+        self._screen_rules(
+            backend="http",
+            rules=rules,
+            attempt_number=attempt_number,
+            model_name=None,
+            provider_name=None,
+            metadata={"table_name": table_name, "rule_count": len(rules)},
+        )
         prompt_kind, system_prompt, user_prompt = self._build_prompts(
             table_name=table_name,
             schema=schema,
@@ -583,7 +700,7 @@ class HttpLLMGatewayClient(_BaseGatewayClient):
             prompt_kind=prompt_kind,
             prompt_text=prompt_text,
             response_text=response_text,
-            suspicious=any(_looks_suspicious(rule.source_text) for rule in rules),
+            suspicious=False,
             attempt_number=attempt_number,
             model_name=model_name,
             provider_name=provider_name,
@@ -610,20 +727,26 @@ class LiteLLMGatewayClient(_BaseGatewayClient):
         model_name: str,
         gateway_url: str | None,
         timeout_seconds: float,
-        temperature: float,
+        temperature: float | None,
         prompt_template_version: str,
         audit_repository: PromptAuditRepository,
         semantic_cache: GPTSemanticTranslationCache | None = None,
+        guardrail_scanner: GuardrailScanner | None = None,
+        guardrail_block_message: str = "Input rejected by safety guardrails.",
+        extra_completion_params: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             prompt_template_version=prompt_template_version,
             audit_repository=audit_repository,
             semantic_cache=semantic_cache,
+            guardrail_scanner=guardrail_scanner,
+            guardrail_block_message=guardrail_block_message,
         )
         self.model_name = model_name
         self.gateway_url = gateway_url
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
+        self.extra_completion_params = dict(extra_completion_params or {})
 
     def translate_batch(
         self,
@@ -635,6 +758,15 @@ class LiteLLMGatewayClient(_BaseGatewayClient):
         error_feedback: str | None = None,
         attempt_number: int = 1,
     ) -> GatewayTranslationBatch:
+        provider_name = self._infer_provider_name(self.model_name, "litellm")
+        self._screen_rules(
+            backend="litellm",
+            rules=rules,
+            attempt_number=attempt_number,
+            model_name=self.model_name,
+            provider_name=provider_name,
+            metadata={"table_name": table_name, "rule_count": len(rules)},
+        )
         prompt_kind, system_prompt, user_prompt = self._build_prompts(
             table_name=table_name,
             schema=schema,
@@ -643,8 +775,7 @@ class LiteLLMGatewayClient(_BaseGatewayClient):
             error_feedback=error_feedback,
         )
         prompt_text = f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
-        provider_name = self._infer_provider_name(self.model_name, "litellm")
-        suspicious = any(_looks_suspicious(rule.source_text) for rule in rules)
+        suspicious = False
         cache_insight: CacheInsight | None = None
 
         if self.semantic_cache is not None and previous_response_text is None:
@@ -705,11 +836,14 @@ class LiteLLMGatewayClient(_BaseGatewayClient):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": self.temperature,
             "timeout": self.timeout_seconds,
         }
+        if self.temperature is not None:
+            completion_kwargs["temperature"] = self.temperature
         if self.gateway_url:
             completion_kwargs["api_base"] = self.gateway_url
+        if self.extra_completion_params:
+            completion_kwargs.update(self.extra_completion_params)
 
         response = completion(
             **completion_kwargs,
@@ -771,6 +905,191 @@ class LiteLLMGatewayClient(_BaseGatewayClient):
         )
 
 
+class DatabricksOpenAIGatewayClient(_BaseGatewayClient):
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        timeout_seconds: float,
+        temperature: float | None,
+        prompt_template_version: str,
+        audit_repository: PromptAuditRepository,
+        semantic_cache: GPTSemanticTranslationCache | None = None,
+        guardrail_scanner: GuardrailScanner | None = None,
+        guardrail_block_message: str = "Input rejected by safety guardrails.",
+        client: Any | None = None,
+        extra_completion_params: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            prompt_template_version=prompt_template_version,
+            audit_repository=audit_repository,
+            semantic_cache=semantic_cache,
+            guardrail_scanner=guardrail_scanner,
+            guardrail_block_message=guardrail_block_message,
+        )
+        self.model_name = model_name
+        self.timeout_seconds = timeout_seconds
+        self.temperature = temperature
+        self.extra_completion_params = dict(extra_completion_params or {})
+        self._client = client if client is not None else self._build_default_client()
+
+    @staticmethod
+    def _build_default_client() -> Any:
+        try:
+            from databricks_openai import DatabricksOpenAI  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise RuntimeError(
+                "databricks_openai is not installed. Install the optional extra with "
+                "`pip install rulesgen[databricks]` to enable Databricks-hosted models."
+            ) from exc
+        return DatabricksOpenAI()
+
+    def translate_batch(
+        self,
+        *,
+        table_name: str | None,
+        schema: list[SchemaColumnDefinition],
+        rules: list[NaturalLanguageRuleRequest],
+        previous_response_text: str | None = None,
+        error_feedback: str | None = None,
+        attempt_number: int = 1,
+    ) -> GatewayTranslationBatch:
+        backend = "databricks_openai"
+        provider_name = "databricks"
+        self._screen_rules(
+            backend=backend,
+            rules=rules,
+            attempt_number=attempt_number,
+            model_name=self.model_name,
+            provider_name=provider_name,
+            metadata={"table_name": table_name, "rule_count": len(rules)},
+        )
+        prompt_kind, system_prompt, user_prompt = self._build_prompts(
+            table_name=table_name,
+            schema=schema,
+            rules=rules,
+            previous_response_text=previous_response_text,
+            error_feedback=error_feedback,
+        )
+        prompt_text = f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
+        cache_insight: CacheInsight | None = None
+
+        if self.semantic_cache is not None and previous_response_text is None:
+            scope_key = self._scope_key(
+                backend=backend,
+                model_name=self.model_name,
+                table_name=table_name,
+                schema=schema,
+                rules=rules,
+            )
+            started_at = time.perf_counter()
+            cached = self.semantic_cache.get(scope_key=scope_key, prompt_text=user_prompt)
+            latency_ms = round((time.perf_counter() - started_at) * 1000.0, 3)
+            if cached is not None:
+                metrics = LLMRequestMetrics(
+                    latency_ms=latency_ms,
+                    attempts=1,
+                    cache=cached.cache,
+                )
+                audit_record = self._build_audit_record(
+                    backend=backend,
+                    prompt_kind=prompt_kind,
+                    prompt_text=prompt_text,
+                    response_text=cached.response_text,
+                    suspicious=False,
+                    attempt_number=attempt_number,
+                    model_name=self.model_name,
+                    provider_name=provider_name,
+                    latency_ms=latency_ms,
+                    metrics=metrics,
+                    metadata={
+                        "cache": cached.cache.metadata,
+                        "table_name": table_name,
+                        "rule_count": len(rules),
+                    },
+                )
+                self.audit_repository.save(audit_record)
+                return GatewayTranslationBatch(
+                    items=self._parse_response_items(cached.response_text),
+                    prompt_audits=[audit_record],
+                    backend=backend,
+                    provider_name=provider_name,
+                    model_name=self.model_name,
+                    metrics=metrics,
+                )
+            cache_insight = CacheInsight(
+                backend="gptcache",
+                enabled=True,
+                hit=False,
+                scope_key=scope_key,
+            )
+
+        started_at = time.perf_counter()
+        create_kwargs: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "timeout": self.timeout_seconds,
+        }
+        if self.temperature is not None:
+            create_kwargs["temperature"] = self.temperature
+        if self.extra_completion_params:
+            create_kwargs.update(self.extra_completion_params)
+        response = self._client.chat.completions.create(**create_kwargs)
+        latency_ms = round((time.perf_counter() - started_at) * 1000.0, 3)
+        raw_text = _extract_message_content(response)
+        parsed_items = self._parse_response_items(raw_text)
+        response_text = self._serialize_items(parsed_items)
+        usage = self._build_usage(getattr(response, "usage", None))
+        metrics = LLMRequestMetrics(
+            usage=usage,
+            cost=None,
+            latency_ms=latency_ms,
+            attempts=1,
+            cache=cache_insight,
+        )
+        audit_record = self._build_audit_record(
+            backend=backend,
+            prompt_kind=prompt_kind,
+            prompt_text=prompt_text,
+            response_text=response_text,
+            suspicious=False,
+            attempt_number=attempt_number,
+            model_name=self.model_name,
+            provider_name=provider_name,
+            latency_ms=latency_ms,
+            metrics=metrics,
+            metadata={"table_name": table_name, "rule_count": len(rules)},
+        )
+        self.audit_repository.save(audit_record)
+
+        if (
+            self.semantic_cache is not None
+            and cache_insight is not None
+            and cache_insight.scope_key is not None
+            and previous_response_text is None
+        ):
+            stored_cache = self.semantic_cache.put(
+                scope_key=cache_insight.scope_key,
+                prompt_text=user_prompt,
+                response_text=response_text,
+            )
+            metrics.cache = stored_cache
+            audit_record.metrics = metrics
+            self.audit_repository.save(audit_record)
+
+        return GatewayTranslationBatch(
+            items=parsed_items,
+            prompt_audits=[audit_record],
+            backend=backend,
+            provider_name=provider_name,
+            model_name=self.model_name,
+            metrics=metrics,
+        )
+
+
 def _extract_message_content(response: Any) -> str:
     choices = getattr(response, "choices", [])
     if not choices:
@@ -786,17 +1105,3 @@ def _extract_message_content(response: Any) -> str:
                 text_parts.append(str(item))
         return "".join(text_parts)
     return str(content)
-
-
-def _looks_suspicious(text: str) -> bool:
-    lowered = text.lower()
-    suspicious_tokens = [
-        "ignore previous",
-        "system prompt",
-        "__import__",
-        "exec(",
-        "eval(",
-        "open(",
-        "subprocess",
-    ]
-    return any(token in lowered for token in suspicious_tokens)

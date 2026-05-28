@@ -353,6 +353,117 @@ See `.env.example` for the supported `RULESGEN_*` settings.
 
 ---
 
+## Safety guardrails
+
+`rulesgen` scans every natural-language rule before it reaches the LLM, blocking prompt-injection and jailbreak attempts and recording the verdict to the prompt-audit trail. A block produces a `422 Unprocessable Entity` response with `code: "guardrail_blocked"` in the standard Problem Details envelope; the response body never leaks the matched category, scanner name, or risk score.
+
+The default backend is a zero-dependency heuristic scanner. Two upgraded backends are available behind optional extras.
+
+### Backends
+
+* `heuristic` — default. Regex over instruction-override, system-prompt-leak, role-override, code-escape, and delimiter-injection patterns. No new dependencies, no model downloads, no network egress.
+* `llm_guard` — ML-based, backed by `llm-guard`'s DeBERTa-v3 prompt-injection classifier. Requires the `[guardrails]` extra. A `model_id` can point at any HuggingFace identifier (e.g. `meta-llama/Prompt-Guard-86M`) **or** a local path such as a Unity Catalog volume for air-gapped deployments.
+* `http` — calls a customer-owned classification endpoint. Designed for Databricks Model Serving (Llama Guard 3 or a private classifier). Supports `none` / `bearer` / `databricks_sdk` auth modes.
+* `off` — disables guardrails entirely. Use only in isolated test environments.
+
+### Configuration
+
+```bash
+# Default heuristic backend (no extra install required)
+RULESGEN_GUARDRAILS_BACKEND=heuristic
+
+# Opt-in LLM Guard backend
+pip install 'rulesgen[guardrails]'           # or `[guardrails-onnx]` for ONNX runtime
+RULESGEN_GUARDRAILS_BACKEND=llm_guard
+RULESGEN_GUARDRAILS_THRESHOLD=0.5
+RULESGEN_GUARDRAILS_MODEL_ID=ProtectAI/deberta-v3-base-prompt-injection-v2
+RULESGEN_GUARDRAILS_MODEL_CACHE_DIR=/Volumes/<catalog>/<schema>/<vol>/hf-cache
+
+# HTTP backend pointing at a Databricks Model Serving endpoint
+RULESGEN_GUARDRAILS_BACKEND=http
+RULESGEN_GUARDRAILS_HTTP_ENDPOINT=https://<workspace>.cloud.databricks.com/serving-endpoints/<endpoint>/invocations
+RULESGEN_GUARDRAILS_HTTP_AUTH_MODE=bearer                  # or `databricks_sdk` / `none`
+RULESGEN_GUARDRAILS_HTTP_AUTH_ENV_VAR=DATABRICKS_TOKEN
+RULESGEN_GUARDRAILS_HTTP_THRESHOLD=0.5
+RULESGEN_GUARDRAILS_HTTP_RESPONSE_SCORE_PATH=predictions.0.score
+```
+
+A blocked request still emits a `PromptAuditRecord` with `suspicious=True`, the scanner name, risk score, and matched categories so operators can review attempts without exposing details to API callers.
+
+---
+
+## Using Databricks-hosted models
+
+When the LLM gateway is configured for Databricks, `rulesgen` calls the Databricks Foundation Model APIs (or a customer-deployed Model Serving endpoint) via the official `databricks_openai.DatabricksOpenAI` client. **No `OPENAI_API_KEY` or other provider key is required** — authentication is resolved by the Databricks SDK auth chain (CLI OAuth, PAT, service principal, Azure AD).
+
+### Install the extra
+
+```bash
+pip install 'rulesgen[databricks]'
+# or, for a uv-managed checkout:
+uv sync --extra databricks
+```
+
+### Run inside a Databricks notebook or job
+
+No additional configuration is needed — the SDK picks up runtime credentials automatically:
+
+```python
+import os
+os.environ["RULESGEN_LLM_GATEWAY_BACKEND"] = "litellm"
+os.environ["RULESGEN_LLM_MODEL_NAME"] = "databricks-claude-sonnet-4-5"
+
+from rulesgen import Settings, SourceType, parse_rule
+
+frame = parse_rule(
+    "If job_level is 5 or higher, set bonus to 10 percent of salary.",
+    source_type=SourceType.NATURAL_LANGUAGE,
+    table_name="employees",
+    schema_columns=["salary", "job_level", "bonus"],
+    target_column="bonus",
+    settings=Settings(),
+)
+print(frame.dsl_candidate)
+```
+
+### Run outside Databricks (CLI / local / container)
+
+Authenticate the Databricks CLI once, then either set `DATABRICKS_HOST` + `DATABRICKS_TOKEN` or rely on the SDK reading `~/.databrickscfg`:
+
+```bash
+databricks auth login --host https://<workspace>.cloud.databricks.com
+
+export RULESGEN_LLM_GATEWAY_BACKEND=litellm
+export RULESGEN_LLM_PROVIDER=databricks                     # or leave "auto" with DATABRICKS_HOST set
+export RULESGEN_LLM_MODEL_NAME=databricks-claude-sonnet-4-5
+```
+
+When `RULESGEN_LLM_PROVIDER=auto` (the default), Databricks is auto-detected by either `DATABRICKS_RUNTIME_VERSION` (set inside every DBR job/notebook) or `DATABRICKS_HOST`. If neither is present and no other provider key resolves, the gateway falls back to the stub backend.
+
+### Models that reject `temperature` or other knobs
+
+Reasoning-tier models (e.g. `databricks-claude-opus-4-7`, OpenAI's o-series) reject `temperature` or require omission of standard parameters. Use these settings to control the completion call:
+
+```bash
+# Omit the temperature parameter entirely
+RULESGEN_LLM_TEMPERATURE=null                               # also accepts empty string
+
+# Merge arbitrary per-model knobs into the chat.completions.create call
+RULESGEN_LLM_EXTRA_COMPLETION_PARAMS={"max_tokens": 4096, "reasoning_effort": "high"}
+```
+
+Extras are JSON-decoded from the env var and merged last, so they can override any default.
+
+### Sanity-check against a real workspace
+
+An opt-in smoke suite lives at `tests/integration/test_databricks_openai_smoke.py`. It is skipped by default; run it explicitly only when you want to incur real Foundation Model API charges:
+
+```bash
+uv run pytest -m databricks tests/integration/test_databricks_openai_smoke.py
+```
+
+---
+
 ## Run modes
 
 ## Recommended: Docker Compose with OpenSandbox
@@ -596,6 +707,32 @@ Install development dependencies:
 
 ```bash
 uv sync --extra api --extra dev
+```
+
+### Optional extras
+
+`rulesgen` ships several optional dependency groups. Combine them via repeated `--extra` flags (uv) or comma-separated brackets (pip).
+
+| Extra | Pulls | Enables |
+|---|---|---|
+| `api` | `fastapi`, `uvicorn`, `python-multipart` | The FastAPI HTTP service. |
+| `dev` | `mypy`, `ruff`, `pytest`, `hypothesis`, `pip-audit`, `pre-commit` | Linting, type-checking, and tests. |
+| `guardrails` | `llm-guard` | ML-based prompt-injection / jailbreak detection. See [Safety guardrails](#safety-guardrails). |
+| `guardrails-onnx` | `llm-guard[onnxruntime]` | Same as `guardrails` plus the ONNX runtime for faster CPU inference. |
+| `databricks` | `databricks-openai` (transitively `databricks-sdk` + `openai`) | Databricks Foundation Model APIs gateway. See [Using Databricks-hosted models](#using-databricks-hosted-models). |
+
+Examples:
+
+```bash
+# Service + dev + Databricks gateway
+uv sync --extra api --extra dev --extra databricks
+
+# Service + dev + ML guardrails + Databricks
+uv sync --extra api --extra dev --extra guardrails --extra databricks
+
+# Pip equivalent
+pip install 'rulesgen[api,dev,databricks]'
+pip install 'rulesgen[guardrails-onnx,databricks]'
 ```
 
 Useful commands:

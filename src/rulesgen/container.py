@@ -15,7 +15,16 @@ from rulesgen.execution.alibaba_opensandbox import AlibabaOpenSandboxExecutionAd
 from rulesgen.execution.interfaces import DatasetSandboxExecutor
 from rulesgen.execution.local import LocalExecutionAdapter
 from rulesgen.execution.opensandbox import SubprocessSandboxExecutionAdapter
+from rulesgen.infra.databricks_auth import detect_databricks
+from rulesgen.infra.guardrails import (
+    GuardrailScanner,
+    HeuristicGuardrailScanner,
+    HttpGuardrailScanner,
+    LLMGuardScanner,
+    NullGuardrailScanner,
+)
 from rulesgen.infra.llm_gateway import (
+    DatabricksOpenAIGatewayClient,
     HttpLLMGatewayClient,
     LiteLLMGatewayClient,
     LLMGatewayClient,
@@ -46,6 +55,14 @@ _LLM_PROVIDER_CREDENTIAL_ENV_VARS = (
 )
 
 
+def _resolve_llm_provider(settings: Settings) -> str:
+    if settings.llm_provider != "auto":
+        return settings.llm_provider
+    if detect_databricks(host_env_var=settings.databricks_host_env_var):
+        return "databricks"
+    return "auto"
+
+
 @dataclass(slots=True)
 class AppContainer:
     settings: Settings
@@ -58,16 +75,55 @@ class AppContainer:
     jobs_service: JobsService
 
 
+def build_guardrail_scanner(settings: Settings) -> GuardrailScanner:
+    if not settings.guardrails_enabled or settings.guardrails_backend == "off":
+        return NullGuardrailScanner()
+    if settings.guardrails_backend == "llm_guard":
+        return LLMGuardScanner(
+            threshold=settings.guardrails_threshold,
+            match_type=settings.guardrails_match_type,
+            model_cache_dir=(
+                str(settings.guardrails_model_cache_dir)
+                if settings.guardrails_model_cache_dir is not None
+                else None
+            ),
+            model_id=settings.guardrails_model_id,
+        )
+    if settings.guardrails_backend == "http":
+        if not settings.guardrails_http_endpoint:
+            raise ValueError(
+                "guardrails_backend='http' requires RULESGEN_GUARDRAILS_HTTP_ENDPOINT."
+            )
+        return HttpGuardrailScanner(
+            endpoint_url=settings.guardrails_http_endpoint,
+            auth_mode=settings.guardrails_http_auth_mode,
+            auth_env_var=settings.guardrails_http_auth_env_var,
+            databricks_host_env_var=settings.guardrails_http_databricks_host_env_var,
+            timeout_seconds=settings.guardrails_http_timeout_seconds,
+            threshold=settings.guardrails_http_threshold,
+            request_text_field=settings.guardrails_http_request_field,
+            response_score_path=settings.guardrails_http_response_score_path,
+        )
+    return HeuristicGuardrailScanner()
+
+
 def build_gateway_client(
     settings: Settings | None = None,
     *,
     audit_repository: PromptAuditRepository | None = None,
+    guardrail_scanner: GuardrailScanner | None = None,
 ) -> LLMGatewayClient:
     resolved_settings = settings or Settings()
     if audit_repository is None:
         _ensure_directories(resolved_settings.audits_repository_dir)
         audit_repository = FileSystemPromptAuditRepository(resolved_settings.audits_repository_dir)
-    use_stub_gateway = _should_fallback_to_stub_gateway(resolved_settings)
+    provider = _resolve_llm_provider(resolved_settings)
+    use_databricks_openai = provider == "databricks" and _databricks_openai_available()
+    use_stub_gateway = _should_fallback_to_stub_gateway(
+        resolved_settings, use_databricks_openai=use_databricks_openai
+    )
+    resolved_scanner = guardrail_scanner or build_guardrail_scanner(resolved_settings)
+    block_message = resolved_settings.guardrails_block_message
 
     semantic_cache = None
     if resolved_settings.llm_semantic_cache_enabled and not use_stub_gateway:
@@ -84,6 +140,25 @@ def build_gateway_client(
             timeout_seconds=resolved_settings.llm_gateway_timeout_seconds,
             prompt_template_version=resolved_settings.llm_prompt_template_version,
             audit_repository=audit_repository,
+            guardrail_scanner=resolved_scanner,
+            guardrail_block_message=block_message,
+        )
+
+    if (
+        resolved_settings.llm_gateway_backend == "litellm"
+        and use_databricks_openai
+        and not use_stub_gateway
+    ):
+        return DatabricksOpenAIGatewayClient(
+            model_name=resolved_settings.llm_model_name,
+            timeout_seconds=resolved_settings.llm_gateway_timeout_seconds,
+            temperature=resolved_settings.llm_temperature,
+            prompt_template_version=resolved_settings.llm_prompt_template_version,
+            audit_repository=audit_repository,
+            semantic_cache=semantic_cache,
+            guardrail_scanner=resolved_scanner,
+            guardrail_block_message=block_message,
+            extra_completion_params=resolved_settings.llm_extra_completion_params,
         )
 
     if resolved_settings.llm_gateway_backend == "litellm" and not use_stub_gateway:
@@ -95,17 +170,37 @@ def build_gateway_client(
             prompt_template_version=resolved_settings.llm_prompt_template_version,
             audit_repository=audit_repository,
             semantic_cache=semantic_cache,
+            guardrail_scanner=resolved_scanner,
+            guardrail_block_message=block_message,
+            extra_completion_params=resolved_settings.llm_extra_completion_params,
         )
 
     return StubLLMGatewayClient(
         prompt_template_version=resolved_settings.llm_prompt_template_version,
         model_name=resolved_settings.llm_model_name,
         audit_repository=audit_repository,
+        guardrail_scanner=resolved_scanner,
+        guardrail_block_message=block_message,
     )
 
 
-def _should_fallback_to_stub_gateway(settings: Settings) -> bool:
+def _databricks_openai_available() -> bool:
+    try:
+        import databricks_openai  # type: ignore[import-untyped]  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _should_fallback_to_stub_gateway(
+    settings: Settings,
+    *,
+    use_databricks_openai: bool = False,
+) -> bool:
     if settings.llm_gateway_backend != "litellm":
+        return False
+
+    if use_databricks_openai:
         return False
 
     if any(os.getenv(name) for name in _LLM_PROVIDER_CREDENTIAL_ENV_VARS):
@@ -244,4 +339,5 @@ __all__ = [
     "build_compiler",
     "build_container",
     "build_gateway_client",
+    "build_guardrail_scanner",
 ]

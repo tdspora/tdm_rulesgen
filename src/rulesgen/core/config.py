@@ -4,7 +4,7 @@ import json
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -62,12 +62,31 @@ class Settings(BaseSettings):
     llm_gateway_timeout_seconds: float = 10.0
     llm_prompt_template_version: str = "v1"
     llm_model_name: str = "rulesgen-local-stub"
-    llm_temperature: float = 0.0
+    llm_temperature: float | None = 0.0
+    llm_extra_completion_params: Annotated[dict[str, Any], NoDecode] = Field(default_factory=dict)
     llm_feedback_max_attempts: int = 2
+    llm_provider: Literal["auto", "openai", "anthropic", "gemini", "azure", "databricks"] = "auto"
+    databricks_host_env_var: str = "DATABRICKS_HOST"
+    databricks_token_env_var: str = "DATABRICKS_TOKEN"
     llm_semantic_cache_enabled: bool = True
     llm_semantic_cache_dir: Path = Path(".rulesgen-data/semantic-cache")
     llm_semantic_cache_similarity_threshold: float = 0.82
     llm_semantic_cache_embedding_dimension: int = 256
+    guardrails_enabled: bool = True
+    guardrails_backend: Literal["heuristic", "llm_guard", "http", "off"] = "heuristic"
+    guardrails_threshold: float = 0.5
+    guardrails_match_type: Literal["FULL", "SENTENCE"] = "FULL"
+    guardrails_model_cache_dir: Path | None = None
+    guardrails_model_id: str | None = None
+    guardrails_block_message: str = "Input rejected by safety guardrails."
+    guardrails_http_endpoint: str | None = None
+    guardrails_http_auth_mode: Literal["none", "bearer", "databricks_sdk"] = "bearer"
+    guardrails_http_auth_env_var: str | None = "DATABRICKS_TOKEN"
+    guardrails_http_databricks_host_env_var: str | None = "DATABRICKS_HOST"
+    guardrails_http_timeout_seconds: float = 5.0
+    guardrails_http_threshold: float = 0.5
+    guardrails_http_request_field: str = "text"
+    guardrails_http_response_score_path: str = "predictions.0.score"
 
     @field_validator("cors_allow_origins", "trusted_hosts", mode="before")
     @classmethod
@@ -79,6 +98,29 @@ class Settings(BaseSettings):
             if stripped.startswith("["):
                 return json.loads(stripped)
             return [item.strip() for item in stripped.split(",") if item.strip()]
+        return value
+
+    @field_validator("llm_temperature", mode="before")
+    @classmethod
+    def coerce_optional_temperature(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "" or stripped.lower() == "null":
+                return None
+        return value
+
+    @field_validator("llm_extra_completion_params", mode="before")
+    @classmethod
+    def parse_extra_completion_params(cls, value: object) -> object:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return {}
+            return json.loads(stripped)
         return value
 
 

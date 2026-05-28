@@ -478,18 +478,6 @@ class RuleCompilerService:
     ) -> SemanticFrame:
         prompt_audit = prompt_audits[-1] if prompt_audits else None
         diagnostics = list(frame.diagnostics)
-        if any(audit.suspicious for audit in prompt_audits) and not any(
-            item.code == "prompt_security_review" for item in diagnostics
-        ):
-            diagnostics.append(
-                Diagnostic(
-                    level=DiagnosticLevel.WARNING,
-                    code="prompt_security_review",
-                    message=(
-                        "Input matched prompt-security review heuristics and should be audited."
-                    ),
-                )
-            )
         trace = frame.explainability_trace
         if trace is not None:
             trace = ExplainabilityTrace(

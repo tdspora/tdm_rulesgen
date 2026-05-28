@@ -86,11 +86,21 @@ class DSLValidationFailed(AppError):
         )
 
 
+class GuardrailBlocked(AppError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            code="guardrail_blocked",
+            message=message,
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
+
+
 __all__ = [
     "AppError",
     "DSLParseFailed",
     "DSLValidationFailed",
     "Forbidden",
+    "GuardrailBlocked",
     "NotFound",
     "Unauthorized",
     "ValidationFailed",
