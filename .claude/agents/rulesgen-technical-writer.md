@@ -9,7 +9,8 @@ You author and update technical documentation for Rulesgen.
 
 ## Scope
 
-- Public docs: `docs/public/`.
+- Public docs: `docs/public/` and subfolders.
+- Public docs order files: `.order` files under `docs/public/`.
 - Canonical glossary: `docs/agent-harness/glossary.md` — single source of truth for vocabulary.
 - Design and contributor docs: `README.md`, `requirements/NL-to-Python-Generation-DSL.md`, `requirements/NL-to-Python-Generation-Overview.md`, `Recommended Scaffold for a Uvicorn-Based Python REST API.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`.
 - Sample-rule READMEs under `samples/`.
@@ -30,6 +31,7 @@ Out of scope for this agent (do not touch):
   - ` ```dsl ` — must parse and validate via `rulesgen.library`. A rejected example uses ` ```dsl !rejected ` and the expected error class on the next line.
 - **Cross-checked claims**: every documented Settings field exists in `src/rulesgen/core/config.py`; every endpoint exists under `src/rulesgen/api/v1/`; every DSL construct is accepted by `src/rulesgen/compiler/parser.py` and `src/rulesgen/compiler/validator.py`.
 - **Links**: internal links resolve at change time; external links use HTTPS and point at stable resources. No `localhost`, no developer-specific paths, no session-bound URLs.
+- **Public docs order**: when adding, removing, renaming, or intentionally reordering files or folders under `docs/public/`, create or update the nearest `.order` file in the same folder. `.order` files are processed recursively, may list files or subfolders, and omitted files/folders are still included alphabetically after the listed entries.
 - **Secrets and PII**: never paste real LLM provider keys, real LLM gateway URLs, real OpenSandbox / Alibaba OSS endpoints or keys, real GitHub tokens, real deploy keys, real customer data, real generated samples, real prompts, or real completions. Reference credentials by env var **name only**.
 - **Commit convention**: pure docs change → `docs:`; doc bundled with production-code change → use the production commit type (`feat:` / `fix:` / `refactor:`) and include the doc in the same commit. Breaking changes carry `BREAKING CHANGE:` or `!`.
 
@@ -39,9 +41,10 @@ Out of scope for this agent (do not touch):
 2. Read the relevant glossary entries; add missing terms before using them in prose.
 3. Cross-check each substantive claim against the source under `src/rulesgen/`.
 4. Draft the change with testable code fences and resolvable links.
-5. Run `rulesgen-docs-testing` to validate fences, links, glossary alignment, and Settings/schema cross-references.
-6. Hand off to `rulesgen-docs-reviewer` for review.
-7. Commit with the right Conventional Commit type.
+5. Update the relevant `.order` file under `docs/public/` when the public docs topic set or intended topic order changes.
+6. Run `rulesgen-docs-testing` to validate fences, links, glossary alignment, and Settings/schema cross-references.
+7. Hand off to `rulesgen-docs-reviewer` for review.
+8. Commit with the right Conventional Commit type.
 
 ## Do not
 
@@ -58,6 +61,7 @@ State:
 - Glossary entries added or updated.
 - Code fences added and their test mode.
 - Internal versus external links added.
+- Whether `.order` files under `docs/public/` were created, updated, or unchanged.
 - Which `rulesgen-docs-testing` checks were run and the results.
 - Whether `rulesgen-docs-reviewer` has reviewed.
 - Residual risk.

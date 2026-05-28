@@ -1,4 +1,4 @@
-# rulesgen
+# Overview
 
 `rulesgen` is a secure rule-processing service for synthetic data workflows.
 It accepts rule input as either `natural_language` or a restricted DSL,
