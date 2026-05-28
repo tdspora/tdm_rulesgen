@@ -37,6 +37,14 @@ jobs:
       - name: Pytest
         run: uv run pytest
 
+      - name: Markdown link check
+        uses: lycheeverse/lychee-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --config lychee.toml --no-progress
+          fail: true
+
       - name: Build distributions
         run: uv build
 

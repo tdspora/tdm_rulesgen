@@ -1,0 +1,52 @@
+## Markdown link checker config for tdm_rulesgen.
+## https://lychee.cli.rs/usage/config/
+
+max_concurrency = 4
+max_redirects = 5
+max_retries = 2
+retry_wait_time = 5
+timeout = 20
+no_progress = true
+
+cache = true
+max_cache_age = "14d"
+
+include_verbatim = false
+include_mail = false
+
+scheme = ["https", "http"]
+accept = ["200..=299", "403", "429"]
+
+## Paths scanned for Markdown files. Excludes generated artefacts, the venv,
+## and harness internals (those are not user-facing docs).
+include = [
+  "*.md",
+  "docs/**/*.md",
+  "samples/**/*.md",
+]
+
+exclude_path = [
+  ".rulesgen-data",
+  "~.rulesgen-data",
+  "dist",
+  "site",
+  "node_modules",
+  ".venv",
+  ".git",
+  ".github",
+  ".claude",
+  "tests",
+  "src",
+]
+
+## Hosts to ignore — illustrative placeholders, localhost / private nets,
+## customer-specific deployments. Never add real customer hostnames here.
+exclude = [
+  "^http://localhost",
+  "^https?://127\\.0\\.0\\.1",
+  "^https?://0\\.0\\.0\\.0",
+  "^https?://.*\\.local",
+  "^https?://.*\\.internal",
+  "^https?://docs\\.rulesgen\\.local",
+  "^https?://example\\.com",
+]
