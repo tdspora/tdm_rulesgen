@@ -17,14 +17,7 @@ include_mail = false
 scheme = ["https", "http"]
 accept = ["200..=299", "403", "429"]
 
-## Paths scanned for Markdown files. Excludes generated artefacts, the venv,
-## and harness internals (those are not user-facing docs).
-include = [
-  "*.md",
-  "docs/**/*.md",
-  "samples/**/*.md",
-]
-
+## Exclude generated artefacts, the venv, and harness internals.
 exclude_path = [
   ".rulesgen-data",
   "~.rulesgen-data",

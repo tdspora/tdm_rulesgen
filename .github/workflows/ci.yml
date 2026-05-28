@@ -42,7 +42,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --config lychee.toml --no-progress
+          args: >-
+            --config lychee.toml
+            --no-progress
+            --root-dir "${{ github.workspace }}"
+            "./**/*.md"
           fail: true
 
       - name: Build distributions
