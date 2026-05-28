@@ -126,8 +126,8 @@ class LLMGuardScanner:
 
     def _initialize(self) -> None:
         try:
-            from llm_guard.input_scanners import PromptInjection  # type: ignore[import-not-found]
-            from llm_guard.input_scanners.prompt_injection import (  # type: ignore[import-not-found]
+            from llm_guard.input_scanners import PromptInjection
+            from llm_guard.input_scanners.prompt_injection import (
                 MatchType,
             )
         except ImportError as exc:
@@ -148,7 +148,7 @@ class LLMGuardScanner:
         }
         if self._model_id is not None:
             try:
-                from llm_guard.model import Model  # type: ignore[import-not-found]
+                from llm_guard.model import Model
             except ImportError as exc:
                 raise RuntimeError(
                     "Custom guardrails model id requires `llm_guard.model.Model`; "

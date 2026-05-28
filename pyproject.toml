@@ -83,6 +83,15 @@ warn_unused_configs = true
 disallow_any_generics = true
 no_implicit_reexport = true
 
+[[tool.mypy.overrides]]
+module = [
+  "databricks.*",
+  "databricks_openai",
+  "databricks_openai.*",
+  "llm_guard.*",
+]
+ignore_missing_imports = true
+
 [tool.uv]
 required-version = ">=0.8.0"
 

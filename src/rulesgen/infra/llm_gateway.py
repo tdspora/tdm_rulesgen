@@ -936,7 +936,7 @@ class DatabricksOpenAIGatewayClient(_BaseGatewayClient):
     @staticmethod
     def _build_default_client() -> Any:
         try:
-            from databricks_openai import DatabricksOpenAI  # type: ignore[import-untyped]
+            from databricks_openai import DatabricksOpenAI
         except ImportError as exc:
             raise RuntimeError(
                 "databricks_openai is not installed. Install the optional extra with "

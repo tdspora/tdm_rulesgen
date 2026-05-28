@@ -186,7 +186,7 @@ def build_gateway_client(
 
 def _databricks_openai_available() -> bool:
     try:
-        import databricks_openai  # type: ignore[import-untyped]  # noqa: F401
+        import databricks_openai  # noqa: F401
     except ImportError:
         return False
     return True
