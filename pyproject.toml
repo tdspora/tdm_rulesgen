@@ -87,7 +87,6 @@ no_implicit_reexport = true
 module = [
   "databricks.*",
   "databricks_openai",
-  "databricks_openai.*",
   "llm_guard.*",
 ]
 ignore_missing_imports = true
