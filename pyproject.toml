@@ -71,9 +71,10 @@ select = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-q -m 'not databricks'"
+addopts = "-q -m 'not databricks and not jailbreak'"
 markers = [
   "databricks: opt-in smoke tests that hit a real Databricks workspace (cost real money; require `databricks-cli` auth and `[databricks]` extra).",
+  "jailbreak: opt-in adversarial tests that send prompt-injection / jailbreak payloads to a real LLM (cost real money; require `OPENAI_API_KEY`).",
 ]
 
 [tool.mypy]
