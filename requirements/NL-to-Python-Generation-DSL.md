@@ -34,9 +34,10 @@ The parser enforces `RULESGEN_DSL_MAX_LENGTH`, currently defaulting to 2000 char
 
 The syntax limits above do not bound what a short expression produces when it runs, so evaluation is bounded separately (see [limits.py](../src/rulesgen/compiler/limits.py)):
 
-- `RULESGEN_DSL_MAX_VALUE_LENGTH`, currently defaulting to 1,048,576, caps every value an expression produces: the results of `+` and `*` on strings, lists, and tuples, the results of `concat`, `lower`, `upper`, `pattern`, `regex`, and `faker`, and the final rule result. Text counts one unit per character; lists and tuples count their expanded contents, so repeated references count every time they appear.
-- `regex(...)` accepts at most 256 digits. Larger counts are rejected at compile time with the `dsl_regex_too_long` diagnostic.
-- A value that exceeds a limit fails the preview or generation run with a `validation_failed` error instead of allocating the value.
+- `RULESGEN_DSL_MAX_VALUE_LENGTH`, currently defaulting to 1,048,576, caps every value an expression produces: the results of `+` and `*` on strings, lists, and tuples, the results of `concat`, `lower`, `upper`, `pattern`, `regex`, and `faker`, and the final rule result. Text counts one unit per character; a list or tuple counts one unit plus its expanded contents, so repeated references count every time they appear; any other value counts one unit.
+- `+`, `*`, and `concat(...)` are refused before an oversized value is built. The other helper results and the final rule result are checked right after they are produced.
+- `regex(...)` accepts at most 256 digits. Larger counts are rejected at compile time with `dsl_validation_failed` and the `dsl_regex_too_long` diagnostic.
+- An exceeded limit fails preview with a `validation_failed` error. A dataset generation job finishes with status `failed` and the reason in its `error` field.
 
 ## Runtime Helper Whitelist
 
@@ -52,7 +53,7 @@ Implemented row-phase helpers:
 - `optional(probability, value)`: return null with a seeded random probability, otherwise return the value.
 - `randint(start, end)`: seeded random integer.
 - `choice(sequence, weights=None)`: seeded random selection, with optional weights.
-- `faker(provider)`: call a provider on a seeded Faker instance. `provider` must be a lower-case public provider name such as `"name"`; the runtime only calls methods of Faker providers, so Faker plumbing such as `seed_instance` is rejected, and the binary providers `binary`, `image`, `json_bytes`, `tar`, and `zip` are blocked.
+- `faker(provider)`: call a provider on a seeded Faker instance. `provider` must be a lower-case public provider name such as `"name"`, and the binary providers `binary`, `image`, `json_bytes`, `tar`, and `zip` are rejected at compile time. The runtime only calls methods of Faker provider classes, so other Faker attributes with provider-like names, such as `seed_instance`, pass the validator but fail when the rule runs.
 - `pattern(fmt)`: generate simple pattern strings using `A`, `a`, and `#`.
 - `regex(value)`: generate only simple anchored prefix-plus-digits patterns.
 - `fk(reference)`: select from a provided reference value pool.
