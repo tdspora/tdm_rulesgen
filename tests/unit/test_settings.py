@@ -129,3 +129,14 @@ def test_build_container_wires_dsl_max_value_length(tmp_path) -> None:
     assert container.rules_service.execution_adapter.max_value_length == 4096
     sandbox_adapter = container.generation_service.sandbox_adapter
     assert getattr(sandbox_adapter, "max_value_length", None) == 4096
+    assert getattr(sandbox_adapter, "max_memory_mb", None) == 2048
+
+
+def test_settings_sandbox_max_memory_mb_defaults_and_validation(monkeypatch) -> None:
+    assert Settings().sandbox_max_memory_mb == 2048
+
+    monkeypatch.setenv("RULESGEN_SANDBOX_MAX_MEMORY_MB", "0")
+    assert Settings().sandbox_max_memory_mb == 0
+
+    with pytest.raises(ValidationError):
+        Settings(sandbox_max_memory_mb=-1)

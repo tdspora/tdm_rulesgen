@@ -146,6 +146,7 @@ class AlibabaOpenSandboxExecutionAdapter:
         opensandbox_workspace_dir: str,
         sandbox_creator: SandboxCreator = create_managed_sandbox,
         max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
+        max_memory_mb: int = 0,
     ) -> None:
         self.ossfs_store = ossfs_store
         self.artifact_repository = artifact_repository
@@ -154,6 +155,7 @@ class AlibabaOpenSandboxExecutionAdapter:
         self.max_depth = max_depth
         self.max_nodes = max_nodes
         self.max_value_length = max_value_length
+        self.max_memory_mb = max_memory_mb
         self.opensandbox_domain = opensandbox_domain
         self.opensandbox_protocol = opensandbox_protocol
         self.opensandbox_api_key = opensandbox_api_key
@@ -204,6 +206,7 @@ class AlibabaOpenSandboxExecutionAdapter:
                 "max_nodes": self.max_nodes,
                 "max_value_length": self.max_value_length,
             },
+            "resource_limits": {"max_memory_mb": self.max_memory_mb},
         }
         local_manifest_path = self.ossfs_store.write_json(
             job_id,

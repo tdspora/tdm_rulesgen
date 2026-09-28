@@ -90,6 +90,17 @@ Shared sandbox settings:
 - `RULESGEN_SANDBOX_WORKSPACE_DIR`
 - `RULESGEN_SANDBOX_TIMEOUT_SECONDS`
 - `RULESGEN_SANDBOX_PYTHON_EXECUTABLE`
+- `RULESGEN_SANDBOX_MAX_MEMORY_MB`
+
+`RULESGEN_SANDBOX_MAX_MEMORY_MB` (default `2048`) is how much additional
+address space the dataset runner process may allocate after it starts. It is
+enforced on Linux, including inside OpenSandbox containers. A job that exceeds
+it fails instead of exhausting host memory. Set it to `0` to disable the limit.
+
+The subprocess dataset executor starts the runner with a minimal environment:
+locale, path, temporary-directory, and Python interpreter variables only.
+Provider keys and other credentials in the API process environment are not
+passed to the child process.
 
 OpenSandbox settings:
 

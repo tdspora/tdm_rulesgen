@@ -91,8 +91,9 @@ def execute_generation_plan(
                 )
             except Exception as exc:  # noqa: BLE001
                 target = rule.target_column or "<anonymous>"
+                detail = _describe_error(exc)
                 raise ValidationFailed(
-                    f"Row-phase rule {target!r} failed at row {row_index}: {exc}"
+                    f"Row-phase rule {target!r} failed at row {row_index}: {detail}"
                 ) from exc
 
     group_order = _topological_order(group_rules)
@@ -124,8 +125,9 @@ def execute_generation_plan(
                 )
             except Exception as exc:  # noqa: BLE001
                 target = rule.target_column or "<anonymous>"
+                detail = _describe_error(exc)
                 raise ValidationFailed(
-                    f"Group-phase rule {target!r} failed at row {row_index}: {exc}"
+                    f"Group-phase rule {target!r} failed at row {row_index}: {detail}"
                 ) from exc
 
     return GenerationRun(
@@ -201,6 +203,11 @@ def _classify_columns(
     return sources
 
 
+def _describe_error(exc: Exception) -> str:
+    # MemoryError (for example from the sandbox memory limit) has no message.
+    return str(exc) or type(exc).__name__
+
+
 def _derive_seed(base_seed: int, artifact_id: str, row_index: int) -> int:
     digest = hashlib.sha256(f"{base_seed}:{artifact_id}:{row_index}".encode()).hexdigest()
     return int(digest[:16], 16)
@@ -261,8 +268,9 @@ def _build_aggregate_lookup(
                 lookup[key] = lookup.get(key, 0) + 1
         except Exception as exc:  # noqa: BLE001
             target = compiled_rule.target_column or "<anonymous>"
+            detail = _describe_error(exc)
             raise ValidationFailed(
-                f"Aggregate helper for rule {target!r} failed at row {row_index}: {exc}"
+                f"Aggregate helper for rule {target!r} failed at row {row_index}: {detail}"
             ) from exc
     return lookup
 

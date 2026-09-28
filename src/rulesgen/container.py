@@ -271,6 +271,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             max_depth=resolved_settings.dsl_max_depth,
             max_nodes=resolved_settings.dsl_max_nodes,
             max_value_length=resolved_settings.dsl_max_value_length,
+            max_memory_mb=resolved_settings.sandbox_max_memory_mb,
             opensandbox_domain=resolved_settings.opensandbox_domain,
             opensandbox_protocol=resolved_settings.opensandbox_protocol,
             opensandbox_api_key=resolved_settings.opensandbox_api_key,
@@ -291,6 +292,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             max_depth=resolved_settings.dsl_max_depth,
             max_nodes=resolved_settings.dsl_max_nodes,
             max_value_length=resolved_settings.dsl_max_value_length,
+            max_memory_mb=resolved_settings.sandbox_max_memory_mb,
         )
     rules_service = RulesService(
         compiler=compiler,

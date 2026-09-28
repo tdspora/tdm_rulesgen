@@ -4,9 +4,10 @@ import json
 import os
 import shutil
 import subprocess
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from uuid import uuid4
 
 from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
@@ -24,6 +25,48 @@ from rulesgen.domain.repositories import ArtifactRepository
 from rulesgen.domain.uploads import DatasetInputSource
 from rulesgen.errors import ValidationFailed
 from rulesgen.infra.ossfs import LocalOssfsStore
+
+RUNNER_ENV_ALLOWLIST: Final = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LD_LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "PYTHONHOME",
+    "PYTHONIOENCODING",
+    "PYTHONUTF8",
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONHASHSEED",
+)
+"""Parent environment variables the dataset runner inherits.
+
+Everything else (LLM provider keys, `RULESGEN_*` secrets, OSS credentials) is
+withheld from the child process that evaluates compiled rules.
+"""
+
+
+def build_runner_environment(parent_env: Mapping[str, str], *, src_dir: Path) -> dict[str, str]:
+    """Build the minimal environment for the subprocess dataset runner."""
+    env = {name: parent_env[name] for name in RUNNER_ENV_ALLOWLIST if name in parent_env}
+    pythonpath = str(src_dir)
+    if parent_env.get("PYTHONPATH"):
+        pythonpath = f"{pythonpath}{os.pathsep}{parent_env['PYTHONPATH']}"
+    env["PYTHONPATH"] = pythonpath
+    # The runner never calls an LLM. Importing the rulesgen package imports
+    # litellm, which would otherwise download its model cost map at startup.
+    env["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+    return env
 
 
 def serialize_compiled_rule(rule: CompiledRule) -> dict[str, Any]:
@@ -147,6 +190,7 @@ class SubprocessSandboxExecutionAdapter:
         max_depth: int,
         max_nodes: int,
         max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
+        max_memory_mb: int = 0,
     ) -> None:
         self.ossfs_store = ossfs_store
         self.artifact_repository = artifact_repository
@@ -156,6 +200,7 @@ class SubprocessSandboxExecutionAdapter:
         self.max_depth = max_depth
         self.max_nodes = max_nodes
         self.max_value_length = max_value_length
+        self.max_memory_mb = max_memory_mb
 
     def execute_dataset(
         self,
@@ -195,6 +240,7 @@ class SubprocessSandboxExecutionAdapter:
                 "max_nodes": self.max_nodes,
                 "max_value_length": self.max_value_length,
             },
+            "resource_limits": {"max_memory_mb": self.max_memory_mb},
         }
         manifest_path = self.ossfs_store.write_json(
             job_id,
@@ -203,12 +249,9 @@ class SubprocessSandboxExecutionAdapter:
         )
         result_path = job_dir / "sandbox_result.json"
         log_path = job_dir / "sandbox_stdout.log"
-        process_env = os.environ.copy()
-        src_dir = Path(__file__).resolve().parents[2]
-        pythonpath = str(src_dir)
-        if process_env.get("PYTHONPATH"):
-            pythonpath = f"{pythonpath}{os.pathsep}{process_env['PYTHONPATH']}"
-        process_env["PYTHONPATH"] = pythonpath
+        process_env = build_runner_environment(
+            os.environ, src_dir=Path(__file__).resolve().parents[2]
+        )
 
         try:
             completed = subprocess.run(

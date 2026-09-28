@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     sandbox_workspace_dir: Path = Path(".rulesgen-data/opensandbox")
     sandbox_timeout_seconds: float = 30.0
     sandbox_python_executable: str = sys.executable
+    sandbox_max_memory_mb: int = Field(default=2_048, ge=0)
     opensandbox_domain: str = "localhost:8080"
     opensandbox_protocol: Literal["http", "https"] = "http"
     opensandbox_api_key: str | None = None
