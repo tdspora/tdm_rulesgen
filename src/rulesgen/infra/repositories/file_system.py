@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
@@ -35,6 +36,29 @@ from rulesgen.domain.models import (
     TokenUsage,
 )
 from rulesgen.domain.uploads import DatasetInputFormat, DatasetUploadRecord
+
+# Record identifiers become file names, so they must be a single, plain path
+# segment. Server-generated identifiers are UUIDs; anything else that is not a
+# short token of letters, digits, "-" and "_" (for example "../x" or "/abs/x")
+# is treated as an unknown record instead of being joined onto a path.
+_RECORD_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+
+
+def _is_safe_record_id(record_id: object) -> bool:
+    return isinstance(record_id, str) and _RECORD_ID_PATTERN.fullmatch(record_id) is not None
+
+
+def _record_path(root_dir: Path, record_id: str) -> Path:
+    if not _is_safe_record_id(record_id):
+        raise ValueError(f"Invalid record identifier: {record_id!r}")
+    return root_dir / f"{record_id}.json"
+
+
+def _existing_record_path(root_dir: Path, record_id: str) -> Path | None:
+    if not _is_safe_record_id(record_id):
+        return None
+    path = root_dir / f"{record_id}.json"
+    return path if path.is_file() else None
 
 
 def _json_ready(value: Any) -> Any:
@@ -325,14 +349,14 @@ class FileSystemRuleRepository:
 
     def save(self, compiled_rule: CompiledRule) -> CompiledRule:
         _write_json(
-            self.root_dir / f"{compiled_rule.artifact_id}.json",
+            _record_path(self.root_dir, compiled_rule.artifact_id),
             _serialize_compiled_rule(compiled_rule),
         )
         return compiled_rule
 
     def get(self, artifact_id: str) -> CompiledRule:
-        path = self.root_dir / f"{artifact_id}.json"
-        if not path.exists():
+        path = _existing_record_path(self.root_dir, artifact_id)
+        if path is None:
             raise RuleNotFoundError(f"Unknown artifact_id: {artifact_id}")
 
         payload = _read_json(path)
@@ -363,15 +387,15 @@ class FileSystemJobRepository:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, job: JobRecord) -> JobRecord:
-        _write_json(self.root_dir / f"{job.job_id}.json", self._serialize(job))
+        _write_json(_record_path(self.root_dir, job.job_id), self._serialize(job))
         return self.get(job.job_id)
 
     def update(self, job: JobRecord) -> JobRecord:
         return self.save(job)
 
     def get(self, job_id: str) -> JobRecord:
-        path = self.root_dir / f"{job_id}.json"
-        if not path.exists():
+        path = _existing_record_path(self.root_dir, job_id)
+        if path is None:
             raise JobNotFoundError(f"Unknown job_id: {job_id}")
         return self._deserialize(_read_json(path))
 
@@ -416,7 +440,9 @@ class FileSystemArtifactRepository:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, artifact: GeneratedArtifact) -> GeneratedArtifact:
-        path = self.root_dir / artifact.job_id / f"{artifact.artifact_id}.json"
+        if not _is_safe_record_id(artifact.job_id):
+            raise ValueError(f"Invalid record identifier: {artifact.job_id!r}")
+        path = _record_path(self.root_dir / artifact.job_id, artifact.artifact_id)
         _write_json(path, _serialize_artifact(artifact))
         return artifact
 
@@ -426,8 +452,10 @@ class FileSystemArtifactRepository:
         return artifacts
 
     def list_for_job(self, job_id: str) -> list[GeneratedArtifact]:
+        if not _is_safe_record_id(job_id):
+            return []
         job_dir = self.root_dir / job_id
-        if not job_dir.exists():
+        if not job_dir.is_dir():
             return []
         return [_deserialize_artifact(_read_json(path)) for path in sorted(job_dir.glob("*.json"))]
 
@@ -438,12 +466,12 @@ class FileSystemDatasetUploadRepository:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, record: DatasetUploadRecord) -> DatasetUploadRecord:
-        _write_json(self.root_dir / f"{record.file_id}.json", _serialize_dataset_upload(record))
+        _write_json(_record_path(self.root_dir, record.file_id), _serialize_dataset_upload(record))
         return record
 
     def get(self, file_id: str) -> DatasetUploadRecord:
-        path = self.root_dir / f"{file_id}.json"
-        if not path.exists():
+        path = _existing_record_path(self.root_dir, file_id)
+        if path is None:
             raise DatasetUploadNotFoundError(f"Unknown file_id: {file_id}")
         return _deserialize_dataset_upload(_read_json(path))
 
@@ -454,11 +482,11 @@ class FileSystemPromptAuditRepository:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, record: PromptAuditRecord) -> PromptAuditRecord:
-        _write_json(self.root_dir / f"{record.audit_id}.json", _serialize_prompt_audit(record))
+        _write_json(_record_path(self.root_dir, record.audit_id), _serialize_prompt_audit(record))
         return record
 
     def get(self, audit_id: str) -> PromptAuditRecord:
-        path = self.root_dir / f"{audit_id}.json"
-        if not path.exists():
+        path = _existing_record_path(self.root_dir, audit_id)
+        if path is None:
             raise PromptAuditNotFoundError(f"Unknown audit_id: {audit_id}")
         return _deserialize_prompt_audit(_read_json(path))

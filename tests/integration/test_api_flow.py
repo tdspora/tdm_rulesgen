@@ -613,3 +613,44 @@ def test_parse_endpoint_allows_clean_natural_language_input(client) -> None:
 
     assert response.status_code == 200
     assert response.json()["dsl_candidate"] is not None
+
+
+def test_rule_ids_cannot_escape_the_rules_repository(client, tmp_path) -> None:
+    compile_response = client.post(
+        "/rules/compile",
+        json={"expression": 'concat("planted")', "target_column": "x"},
+    )
+    assert compile_response.status_code == 200
+    artifact_id = compile_response.json()["artifact_id"]
+    rules_dir = client.app.state.settings.rules_repository_dir
+    outside = tmp_path / "outside-rule.json"
+    outside.write_text((rules_dir / f"{artifact_id}.json").read_text(encoding="utf-8"))
+
+    for unsafe_id in (str(outside.with_suffix("")), f"../../{outside.stem}", "../rules"):
+        preview_response = client.post("/rules/preview", json={"artifact_id": unsafe_id})
+        assert preview_response.status_code == 404
+        assert preview_response.json()["code"] == "rule_not_found"
+
+    job_response = client.post(
+        "/jobs",
+        json={"kind": "execute_preview", "artifact_id": str(outside.with_suffix(""))},
+    )
+    assert job_response.status_code == 200
+    assert job_response.json()["status"] == "failed"
+    assert "Unknown artifact_id" in job_response.json()["error"]
+
+
+def test_upload_ids_cannot_escape_the_uploads_repository(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "file_id": "../jobs/anything",
+            "schema": [
+                {"name": "order_id", "type": "STRING", "nullable": False, "source": "syngen"}
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "file_not_found"
