@@ -20,7 +20,7 @@ Accepted syntax is the subset admitted by [DSLValidator](../src/rulesgen/compile
 
 - Literals through `ast.Constant`.
 - Calls to whitelisted runtime helpers only.
-- Arithmetic operators: addition, subtraction, multiplication, division, and modulo.
+- Arithmetic operators: addition, subtraction, multiplication, division, and modulo. `%` is numeric modulo only; string `%`-formatting is rejected at runtime (use `concat(...)`).
 - Boolean operators: `and`, `or`, and `not`.
 - Comparisons: equality, inequality, less-than, less-than-or-equal, greater-than, and greater-than-or-equal.
 - Conditional expressions using Python's expression form.
@@ -29,6 +29,14 @@ Accepted syntax is the subset admitted by [DSLValidator](../src/rulesgen/compile
 - Keyword arguments only where a helper accepts them.
 
 The parser enforces `RULESGEN_DSL_MAX_LENGTH`, currently defaulting to 2000 characters. The validator enforces `RULESGEN_DSL_MAX_DEPTH` and `RULESGEN_DSL_MAX_NODES`, currently defaulting to 12 and 128. These limits are configured in [config.py](../src/rulesgen/core/config.py).
+
+## Runtime Limits
+
+The syntax limits above do not bound what a short expression produces when it runs, so evaluation is bounded separately (see [limits.py](../src/rulesgen/compiler/limits.py)):
+
+- `RULESGEN_DSL_MAX_VALUE_LENGTH`, currently defaulting to 1,048,576, caps every value an expression produces: the results of `+` and `*` on strings, lists, and tuples, the results of `concat`, `lower`, `upper`, `pattern`, `regex`, and `faker`, and the final rule result. Text counts one unit per character; lists and tuples count their expanded contents, so repeated references count every time they appear.
+- `regex(...)` accepts at most 256 digits. Larger counts are rejected at compile time with the `dsl_regex_too_long` diagnostic.
+- A value that exceeds a limit fails the preview or generation run with a `validation_failed` error instead of allocating the value.
 
 ## Runtime Helper Whitelist
 
@@ -65,6 +73,7 @@ The validator rejects:
 - Calls whose target is not a simple `ast.Name`.
 - Unknown helper names.
 - `col(...)`, `faker(...)`, `fk(...)`, `pattern(...)`, and `regex(...)` calls without the required string literal argument shape.
+- `regex(...)` patterns that request more than 256 digits.
 - Keyword unpacking.
 - More than one aggregate helper in one DSL expression.
 - `group_sum(...)` unless it uses exactly `key=...` and `value=...`.
@@ -78,7 +87,7 @@ Compilation is implemented by [RuleCompilerService.compile](../src/rulesgen/comp
 
 1. Parses the expression.
 2. Validates it with `DSLValidator`.
-3. Compiles the validated AST with Python's `compile(..., mode="eval")`.
+3. Rewrites the arithmetic operators of a copy of the validated AST into calls to an internal checked-operator helper that enforces the runtime limits, then compiles it with Python's `compile(..., mode="eval")` through `compile_validated_expression` in [runtime_spec.py](../src/rulesgen/compiler/runtime_spec.py). The helper name is not callable from DSL input because the validator rejects it like any other unknown helper.
 4. Produces a `CompiledRule` with:
    - `artifact_id`
    - `target_column`

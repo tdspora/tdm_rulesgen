@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.domain.models import CompiledRule, Diagnostic, DiagnosticLevel, ExecutionPreview
 from rulesgen.errors import ValidationFailed
 from rulesgen.execution.engine import execute_preview_rule
 
 
 class LocalExecutionAdapter:
+    def __init__(self, *, max_value_length: int = DEFAULT_MAX_VALUE_LENGTH) -> None:
+        self.max_value_length = max_value_length
+
     def execute(
         self,
         compiled_rule: CompiledRule,
@@ -27,6 +31,7 @@ class LocalExecutionAdapter:
                 row=row or {},
                 seed=seed,
                 references=references or {},
+                max_value_length=self.max_value_length,
             )
         except Exception as exc:  # noqa: BLE001
             raise ValidationFailed(f"Rule execution failed: {exc}") from exc

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     dsl_max_length: int = 2_000
     dsl_max_depth: int = 12
     dsl_max_nodes: int = 128
+    dsl_max_value_length: int = Field(default=1_048_576, ge=1)
     data_dir: Path = Path(".rulesgen-data")
     rules_repository_dir: Path = Path(".rulesgen-data/rules")
     jobs_repository_dir: Path = Path(".rulesgen-data/jobs")

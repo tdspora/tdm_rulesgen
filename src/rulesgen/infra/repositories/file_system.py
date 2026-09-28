@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from rulesgen.compiler.parser import parse_expression
+from rulesgen.compiler.runtime_spec import compile_validated_expression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.domain.exceptions import (
     DatasetUploadNotFoundError,
@@ -338,7 +339,7 @@ class FileSystemRuleRepository:
         normalized_expression = str(payload["normalized_expression"])
         tree = parse_expression(normalized_expression, max_length=self.max_length)
         validated = DSLValidator(max_depth=self.max_depth, max_nodes=self.max_nodes).validate(tree)
-        code_object = compile(validated.tree, filename="<rulesgen-dsl>", mode="eval")
+        code_object = compile_validated_expression(validated.tree)
         return CompiledRule(
             artifact_id=str(payload["artifact_id"]),
             target_column=payload.get("target_column"),

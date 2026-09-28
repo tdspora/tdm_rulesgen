@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.domain.models import (
     ArtifactKind,
     CompiledRule,
@@ -145,6 +146,7 @@ class SubprocessSandboxExecutionAdapter:
         max_length: int,
         max_depth: int,
         max_nodes: int,
+        max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
     ) -> None:
         self.ossfs_store = ossfs_store
         self.artifact_repository = artifact_repository
@@ -153,6 +155,7 @@ class SubprocessSandboxExecutionAdapter:
         self.max_length = max_length
         self.max_depth = max_depth
         self.max_nodes = max_nodes
+        self.max_value_length = max_value_length
 
     def execute_dataset(
         self,
@@ -190,6 +193,7 @@ class SubprocessSandboxExecutionAdapter:
                 "max_length": self.max_length,
                 "max_depth": self.max_depth,
                 "max_nodes": self.max_nodes,
+                "max_value_length": self.max_value_length,
             },
         }
         manifest_path = self.ossfs_store.write_json(

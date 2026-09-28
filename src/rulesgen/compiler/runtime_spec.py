@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import ast
+import copy
 import random
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from types import CodeType
+from typing import Any, Final
 
 from faker import Faker
+
+from rulesgen.compiler.limits import (
+    DEFAULT_MAX_VALUE_LENGTH,
+    REGEX_HELPER_PATTERN,
+    DSLValueLimitExceeded,
+    apply_checked_binop,
+    ensure_value_within_limit,
+    regex_digit_count,
+)
+
+CHECKED_BINOP_HELPER: Final = "__rulesgen_binop__"
+"""Internal runtime local that evaluates arithmetic operators with size checks.
+
+The name is never reachable from DSL input: the validator rejects bare names and
+calls to anything outside the helper whitelist, and the rewrite that introduces
+this name runs only after validation.
+"""
 
 
 @dataclass(slots=True)
@@ -17,6 +36,7 @@ class RuntimeContext:
     now: datetime = field(default_factory=lambda: datetime.now(UTC))
     aggregate_helper_name: str | None = None
     aggregate_lookup: dict[Any, Any] | None = None
+    max_value_length: int = DEFAULT_MAX_VALUE_LENGTH
     rng: random.Random = field(init=False)
     faker_instance: Faker = field(init=False)
 
@@ -26,7 +46,46 @@ class RuntimeContext:
         self.faker_instance.seed_instance(self.seed)
 
 
+class _CheckedOperatorTransformer(ast.NodeTransformer):
+    """Route every validated ``BinOp`` through :data:`CHECKED_BINOP_HELPER`."""
+
+    def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+        self.generic_visit(node)
+        call = ast.Call(
+            func=ast.Name(id=CHECKED_BINOP_HELPER, ctx=ast.Load()),
+            args=[ast.Constant(value=type(node.op).__name__), node.left, node.right],
+            keywords=[],
+        )
+        return ast.copy_location(call, node)
+
+
+def compile_validated_expression(
+    tree: ast.Expression, *, filename: str = "<rulesgen-dsl>"
+) -> CodeType:
+    """Compile a validated AST into the code object stored on a compiled rule.
+
+    Arithmetic operators are rewritten into calls to the checked operator helper
+    so their results are size-bounded at runtime. The caller's tree is not
+    modified.
+    """
+    checked_tree = _CheckedOperatorTransformer().visit(copy.deepcopy(tree))
+    ast.fix_missing_locations(checked_tree)
+    return compile(checked_tree, filename=filename, mode="eval")
+
+
 def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
+    limit = context.max_value_length
+
+    def bounded_text(text: str, helper: str) -> str:
+        if len(text) > limit:
+            raise DSLValueLimitExceeded(
+                f"{helper} result exceeds the configured limit of {limit} units."
+            )
+        return text
+
+    def checked_binop(operator: str, left: Any, right: Any) -> Any:
+        return apply_checked_binop(operator, left, right, limit=limit)
+
     def col(name: str) -> Any:
         return context.row.get(name)
 
@@ -37,13 +96,18 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         return None
 
     def lower(value: Any) -> str:
-        return str(value).lower()
+        return bounded_text(str(value).lower(), "lower()")
 
     def upper(value: Any) -> str:
-        return str(value).upper()
+        return bounded_text(str(value).upper(), "upper()")
 
     def concat(*args: Any) -> str:
-        return "".join(str(arg) for arg in args)
+        parts = [str(arg) for arg in args]
+        if sum(len(part) for part in parts) > limit:
+            raise DSLValueLimitExceeded(
+                f"concat() result exceeds the configured limit of {limit} units."
+            )
+        return "".join(parts)
 
     def clamp(value: float, minimum: float, maximum: float) -> float:
         return max(minimum, min(maximum, value))
@@ -66,9 +130,12 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         provider_fn = getattr(context.faker_instance, provider, None)
         if provider_fn is None or not callable(provider_fn):
             raise ValueError(f"Unsupported Faker provider: {provider}")
-        return provider_fn()
+        value = provider_fn()
+        ensure_value_within_limit(value, limit, context="faker() result")
+        return value
 
     def pattern(fmt: str) -> str:
+        bounded_text(fmt, "pattern()")
         output: list[str] = []
         for char in fmt:
             if char == "A":
@@ -82,13 +149,13 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         return "".join(output)
 
     def regex(value: str) -> str:
-        match = re.fullmatch(r"\^([A-Za-z-]+)\[0-9\]\{(\d+)\}\$", value)
+        match = REGEX_HELPER_PATTERN.fullmatch(value)
         if not match:
             raise ValueError("Only simple ^PREFIX[0-9]{N}$ regex patterns are supported.")
         prefix, count_str = match.groups()
-        count = int(count_str)
+        count = regex_digit_count(count_str)
         suffix = "".join(context.rng.choice("0123456789") for _ in range(count))
-        return f"{prefix}{suffix}"
+        return bounded_text(f"{prefix}{suffix}", "regex()")
 
     def fk(reference: str) -> Any:
         candidates = context.references.get(reference, [])
@@ -108,6 +175,7 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         return context.aggregate_lookup.get(key)
 
     return {
+        CHECKED_BINOP_HELPER: checked_binop,
         "choice": choice,
         "clamp": clamp,
         "coalesce": coalesce,

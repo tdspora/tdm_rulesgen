@@ -253,7 +253,9 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     job_repository = FileSystemJobRepository(resolved_settings.jobs_repository_dir)
     artifact_repository = FileSystemArtifactRepository(resolved_settings.artifacts_repository_dir)
     upload_repository = FileSystemDatasetUploadRepository(resolved_settings.uploads_repository_dir)
-    execution_adapter = LocalExecutionAdapter()
+    execution_adapter = LocalExecutionAdapter(
+        max_value_length=resolved_settings.dsl_max_value_length
+    )
     ossfs_store = LocalOssfsStore(resolved_settings.ossfs_root_dir)
     dataset_upload_service = DatasetUploadService(
         upload_repository=upload_repository,
@@ -268,6 +270,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             max_length=resolved_settings.dsl_max_length,
             max_depth=resolved_settings.dsl_max_depth,
             max_nodes=resolved_settings.dsl_max_nodes,
+            max_value_length=resolved_settings.dsl_max_value_length,
             opensandbox_domain=resolved_settings.opensandbox_domain,
             opensandbox_protocol=resolved_settings.opensandbox_protocol,
             opensandbox_api_key=resolved_settings.opensandbox_api_key,
@@ -287,6 +290,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             max_length=resolved_settings.dsl_max_length,
             max_depth=resolved_settings.dsl_max_depth,
             max_nodes=resolved_settings.dsl_max_nodes,
+            max_value_length=resolved_settings.dsl_max_value_length,
         )
     rules_service = RulesService(
         compiler=compiler,

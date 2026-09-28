@@ -95,3 +95,31 @@ def test_unhandled_errors_log_traceback_with_request_context(client, caplog, mon
     assert getattr(record, "method", None) == "POST"
     assert record.exc_info is not None
     assert "RuntimeError: boom" in caplog.text
+
+
+def test_oversized_dsl_value_returns_problem_details(client) -> None:
+    response = client.post(
+        "/rules/preview",
+        json={"expression": '"a" * 800000000', "target_column": "x"},
+        headers=LOCALHOST_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "validation_failed"
+    assert "exceeds the configured limit" in body["detail"]
+
+
+def test_regex_digit_limit_returns_problem_details(client) -> None:
+    response = client.post(
+        "/rules/compile",
+        json={"expression": 'regex("^A[0-9]{999999999}$")', "target_column": "x"},
+        headers=LOCALHOST_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "dsl_validation_failed"
+    assert [item["code"] for item in body["errors"]] == ["dsl_regex_too_long"]

@@ -8,7 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.compiler.parser import parse_expression
+from rulesgen.compiler.runtime_spec import compile_validated_expression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.domain.models import (
     AggregateHelperSpec,
@@ -56,6 +58,7 @@ def main(argv: list[str]) -> int:
             max_nodes=int(compiler_limits["max_nodes"]),
             schema=schema,
             now=datetime.fromisoformat(payload["now"]),
+            max_value_length=int(compiler_limits.get("max_value_length", DEFAULT_MAX_VALUE_LENGTH)),
         )
         output_rows_path = Path(payload["output_rows_path"])
         output_rows_path.write_text(
@@ -192,7 +195,7 @@ def _deserialize_compiled_rule(
         helper_phases=validated.helper_phases,
         aggregate_helper=_deserialize_aggregate_helper(payload.get("aggregate_helper")),
         source_type=SourceType(payload.get("source_type", SourceType.DSL.value)),
-        code_object=compile(validated.tree, filename="<rulesgen-dsl>", mode="eval"),
+        code_object=compile_validated_expression(validated.tree),
         dsl_version=str(payload.get("dsl_version", "v1")),
         explainability_trace=_deserialize_trace(payload.get("explainability_trace")),
         created_at=datetime.fromisoformat(payload["created_at"]),

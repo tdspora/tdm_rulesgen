@@ -18,6 +18,7 @@ from opensandbox.exceptions import SandboxException
 from opensandbox.models.execd import Execution, RunCommandOpts
 from opensandbox.models.filesystem import WriteEntry
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.domain.models import (
     ArtifactKind,
     CompiledRule,
@@ -144,6 +145,7 @@ class AlibabaOpenSandboxExecutionAdapter:
         opensandbox_ready_timeout_seconds: float,
         opensandbox_workspace_dir: str,
         sandbox_creator: SandboxCreator = create_managed_sandbox,
+        max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
     ) -> None:
         self.ossfs_store = ossfs_store
         self.artifact_repository = artifact_repository
@@ -151,6 +153,7 @@ class AlibabaOpenSandboxExecutionAdapter:
         self.max_length = max_length
         self.max_depth = max_depth
         self.max_nodes = max_nodes
+        self.max_value_length = max_value_length
         self.opensandbox_domain = opensandbox_domain
         self.opensandbox_protocol = opensandbox_protocol
         self.opensandbox_api_key = opensandbox_api_key
@@ -199,6 +202,7 @@ class AlibabaOpenSandboxExecutionAdapter:
                 "max_length": self.max_length,
                 "max_depth": self.max_depth,
                 "max_nodes": self.max_nodes,
+                "max_value_length": self.max_value_length,
             },
         }
         local_manifest_path = self.ossfs_store.write_json(

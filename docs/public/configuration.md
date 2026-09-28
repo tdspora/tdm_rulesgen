@@ -51,6 +51,14 @@ The compiler validates DSL expressions against size and depth limits:
 
 These limits protect parser and validator behavior for untrusted rule input.
 
+Evaluation is bounded separately by `RULESGEN_DSL_MAX_VALUE_LENGTH` (default
+`1048576`). No value a rule produces during preview or dataset generation may
+be larger than this: operator results, helper results such as `concat(...)`,
+and the final rule result. Text counts one unit per character, and lists and
+tuples count their expanded contents. `regex(...)` accepts at most 256 digits.
+A rule that exceeds a limit fails with a `validation_failed` error instead of
+allocating the value.
+
 ## Local Storage
 
 Generated files, uploads, rules, jobs, artifacts, audits, and semantic-cache

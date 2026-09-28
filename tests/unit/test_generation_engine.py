@@ -94,3 +94,40 @@ def test_execute_generation_plan_materializes_schema_only_columns() -> None:
         "order_id": ColumnSource.MODEL_GENERATED,
         "bonus": ColumnSource.MODEL_GENERATED,
     }
+
+
+def test_execute_generation_plan_enforces_value_limit_per_row() -> None:
+    compiler = build_compiler()
+    rule = compiler.compile(expression='concat(col("code"), col("code"))', target_column="pair")
+
+    with pytest.raises(ValidationFailed, match="row 1"):
+        execute_generation_plan(
+            rows=[{"code": "ab"}, {"code": "abcdef"}],
+            compiled_rules=[rule],
+            seed=5,
+            references={},
+            max_length=2_000,
+            max_depth=12,
+            max_nodes=128,
+            max_value_length=10,
+        )
+
+
+def test_execute_generation_plan_bounds_aggregate_subexpressions() -> None:
+    compiler = build_compiler()
+    aggregate_rule = compiler.compile(
+        expression='group_count(key=col("order_id") * 100)',
+        target_column="order_count",
+    )
+
+    with pytest.raises(ValidationFailed, match="limit of 10 units"):
+        execute_generation_plan(
+            rows=[{"order_id": "A"}],
+            compiled_rules=[aggregate_rule],
+            seed=5,
+            references={},
+            max_length=2_000,
+            max_depth=12,
+            max_nodes=128,
+            max_value_length=10,
+        )
