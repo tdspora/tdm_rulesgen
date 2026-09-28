@@ -57,10 +57,12 @@ be larger than this: operator results, helper results such as `concat(...)`,
 and the final rule result. Sizes follow the printed form of a value: text
 counts one unit per character, numbers count their digits, other values count
 the length of their printed form, and a list or tuple counts one unit plus,
-for each element, the element's size and one separator unit. `+`, `*`, list
-and tuple literals, `concat(...)`, `lower(...)`, and `upper(...)` are checked
-before the value is built or printed; other results are checked right after
-they are produced.
+for each element, the element's size and one separator unit. `+` and `*` on
+text, lists, and tuples, `*` on integers, list and tuple literals,
+`concat(...)`, `lower(...)`, and `upper(...)` are checked before the value is
+built or printed; other results are checked right after they are produced. A
+product of integers is rejected when its factors together have more digits
+than the limit.
 
 When a limit is exceeded, a preview request fails with a `validation_failed`
 Problem Details response, and a dataset generation job finishes with status

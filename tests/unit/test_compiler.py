@@ -380,6 +380,16 @@ def test_preview_rejects_large_scalar_results_under_a_small_limit() -> None:
         LocalExecutionAdapter(max_value_length=100).execute(compiled, row={"n": 10**200})
 
 
+def test_preview_checks_integer_products_before_computing_them() -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression='col("n") * col("n") * col("n")', target_column="x")
+    adapter = LocalExecutionAdapter(max_value_length=10_000)
+
+    with pytest.raises(ValidationFailed, match="Multiplication result exceeds .* 10000 units"):
+        adapter.execute(compiled, row={"n": 10**4000})
+    assert adapter.execute(compiled, row={"n": 10**3000}).value == 10**9000
+
+
 def test_repeated_operators_on_large_results_stay_fast() -> None:
     compiler = build_compiler()
     operand = "([[]] * 349525 * 1 * 1 * 1)"

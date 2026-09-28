@@ -118,8 +118,8 @@ class ValueSizer:
 
         ``operator`` is the ``ast.operator`` class name of a validated ``BinOp``
         node. Sequence repetition and concatenation are rejected before their
-        result is built when it would exceed the limit; ``%`` is numeric modulo
-        only.
+        result is built when it would exceed the limit, and integer products
+        before they are computed when they could; ``%`` is numeric modulo only.
         """
         if operator == "Add":
             if isinstance(left, _SEQUENCE_TYPES) and isinstance(right, _SEQUENCE_TYPES):
@@ -142,6 +142,16 @@ class ValueSizer:
                             f"{self.limit} units."
                         )
                     return _sized(left * right, size)
+            # A product has at most as many digits as its factors together, so
+            # chained products of large row values are stopped before they run.
+            if (
+                isinstance(left, int)
+                and isinstance(right, int)
+                and scalar_size(left) + scalar_size(right) > self.limit
+            ):
+                raise DSLValueLimitExceeded(
+                    f"Multiplication result exceeds the configured limit of {self.limit} units."
+                )
             return left * right
         if operator == "Div":
             return left / right

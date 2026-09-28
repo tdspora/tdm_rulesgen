@@ -11,6 +11,7 @@ from rulesgen.compiler.limits import (
     ValueSizer,
     apply_checked_binop,
     bounded_value_size,
+    scalar_size,
 )
 from rulesgen.compiler.runtime_spec import RuntimeContext, build_runtime_locals
 
@@ -79,6 +80,40 @@ def test_checked_list_concatenation_matches_value_size(
         assert bounded_value_size(left + right, 10**6) > limit
         return
     assert bounded_value_size(result, limit) <= limit
+
+
+@given(
+    left=st.integers(min_value=-(10**80), max_value=10**80),
+    right=st.integers(min_value=-(10**80), max_value=10**80),
+    limit=st.integers(min_value=1, max_value=170),
+)
+def test_checked_integer_multiplication_never_exceeds_limit(
+    left: int, right: int, limit: int
+) -> None:
+    try:
+        result = apply_checked_binop("Mult", left, right, limit=limit)
+    except DSLValueLimitExceeded:
+        assert scalar_size(left) + scalar_size(right) > limit
+        return
+    assert bounded_value_size(result, limit) <= limit
+
+
+def test_checked_integer_multiplication_is_rejected_before_it_runs() -> None:
+    multiplied: list[int] = []
+
+    class TrackedInt(int):
+        def __mul__(self, other: object) -> int:
+            assert isinstance(other, int)
+            multiplied.append(other)
+            return int(self) * other
+
+    factor = TrackedInt(10**600)
+    with pytest.raises(DSLValueLimitExceeded, match="Multiplication result exceeds"):
+        apply_checked_binop("Mult", factor, factor, limit=1_000)
+
+    assert multiplied == []
+    assert apply_checked_binop("Mult", factor, 10, limit=1_000) == 10**601
+    assert multiplied == [10]
 
 
 def test_bounded_value_size_stops_early_on_shared_references() -> None:
