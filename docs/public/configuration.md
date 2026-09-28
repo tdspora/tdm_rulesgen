@@ -86,6 +86,13 @@ Storage settings:
 
 The default local output tree is under `.rulesgen-data/`.
 
+In the Docker image, the entrypoint starts as root, creates these directories,
+and gives them to the unprivileged `appuser` before it starts the API. It
+skips a directory whose path resolves through a symbolic link and prints a
+warning, and it does not change the owner of hard-linked files. Mount volumes
+directly at the configured paths, or set the paths to their resolved
+locations.
+
 ## Execution Backend
 
 Dataset generation uses `RULESGEN_SANDBOX_BACKEND`:
