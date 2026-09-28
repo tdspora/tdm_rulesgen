@@ -316,3 +316,37 @@ def test_preview_rejects_string_percent_formatting() -> None:
 
     with pytest.raises(ValidationFailed, match="numeric modulo only"):
         LocalExecutionAdapter().execute(compiled)
+
+
+@pytest.mark.parametrize("provider", ["name", "email", "random_int", "company"])
+def test_compiler_accepts_public_faker_providers(provider: str) -> None:
+    compiler = build_compiler()
+
+    compiled = compiler.compile(expression=f'faker("{provider}")', target_column="value")
+    preview = LocalExecutionAdapter().execute(compiled, seed=4)
+
+    assert preview.value is not None
+
+
+@pytest.mark.parametrize(
+    "provider",
+    ["__class__", "_Faker__config", "Name", "", "seed-instance", "binary", "zip", "json_bytes"],
+)
+def test_compiler_rejects_non_public_or_binary_faker_providers(provider: str) -> None:
+    compiler = build_compiler()
+
+    with pytest.raises(DSLValidationFailed) as exc_info:
+        compiler.compile(expression=f'faker("{provider}")', target_column="value")
+
+    assert _error_codes(exc_info.value) == ["dsl_unsupported_faker_provider"]
+
+
+@pytest.mark.parametrize(
+    "provider", ["seed_instance", "add_provider", "get_providers", "random", "seed", "missing"]
+)
+def test_preview_rejects_faker_attributes_that_are_not_provider_methods(provider: str) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=f'faker("{provider}")', target_column="value")
+
+    with pytest.raises(ValidationFailed, match="Unsupported Faker provider"):
+        LocalExecutionAdapter().execute(compiled)

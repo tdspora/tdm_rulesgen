@@ -92,3 +92,11 @@ def test_checked_modulo_rejects_text_formatting() -> None:
         apply_checked_binop("Mod", "%s", 1, limit=100)
     with pytest.raises(TypeError, match="numeric modulo only"):
         apply_checked_binop("Mod", b"%d", 1, limit=100)
+
+
+@pytest.mark.parametrize("provider", ["__class__", "__init__", "seed_instance", "binary", "zip"])
+def test_faker_helper_rejects_non_provider_attributes_without_validator(provider: str) -> None:
+    faker = build_runtime_locals(RuntimeContext(row={}, seed=1))["faker"]
+
+    with pytest.raises(ValueError, match="Unsupported Faker provider"):
+        faker(provider)

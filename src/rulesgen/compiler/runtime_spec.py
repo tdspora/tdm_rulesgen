@@ -9,6 +9,7 @@ from types import CodeType
 from typing import Any, Final
 
 from faker import Faker
+from faker.providers import BaseProvider
 
 from rulesgen.compiler.limits import (
     DEFAULT_MAX_VALUE_LENGTH,
@@ -16,6 +17,7 @@ from rulesgen.compiler.limits import (
     DSLValueLimitExceeded,
     apply_checked_binop,
     ensure_value_within_limit,
+    is_allowed_faker_provider_name,
     regex_digit_count,
 )
 
@@ -127,9 +129,18 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         return context.rng.choices(population, weights=weights, k=1)[0]
 
     def faker(provider: str) -> Any:
-        provider_fn = getattr(context.faker_instance, provider, None)
-        if provider_fn is None or not callable(provider_fn):
-            raise ValueError(f"Unsupported Faker provider: {provider}")
+        if not isinstance(provider, str) or not is_allowed_faker_provider_name(provider):
+            raise ValueError(f"Unsupported Faker provider: {provider!r}")
+        try:
+            provider_fn = getattr(context.faker_instance, provider)
+        except (AttributeError, TypeError) as exc:
+            raise ValueError(f"Unsupported Faker provider: {provider!r}") from exc
+        # Only methods of real Faker providers are callable; this excludes the
+        # Faker proxy and Generator plumbing such as seed_instance or add_provider.
+        if not callable(provider_fn) or not isinstance(
+            getattr(provider_fn, "__self__", None), BaseProvider
+        ):
+            raise ValueError(f"Unsupported Faker provider: {provider!r}")
         value = provider_fn()
         ensure_value_within_limit(value, limit, context="faker() result")
         return value

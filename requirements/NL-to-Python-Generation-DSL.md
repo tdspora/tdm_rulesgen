@@ -52,7 +52,7 @@ Implemented row-phase helpers:
 - `optional(probability, value)`: return null with a seeded random probability, otherwise return the value.
 - `randint(start, end)`: seeded random integer.
 - `choice(sequence, weights=None)`: seeded random selection, with optional weights.
-- `faker(provider)`: call a provider on a seeded Faker instance.
+- `faker(provider)`: call a provider on a seeded Faker instance. `provider` must be a lower-case public provider name such as `"name"`; the runtime only calls methods of Faker providers, so Faker plumbing such as `seed_instance` is rejected, and the binary providers `binary`, `image`, `json_bytes`, `tar`, and `zip` are blocked.
 - `pattern(fmt)`: generate simple pattern strings using `A`, `a`, and `#`.
 - `regex(value)`: generate only simple anchored prefix-plus-digits patterns.
 - `fk(reference)`: select from a provided reference value pool.
@@ -74,6 +74,7 @@ The validator rejects:
 - Unknown helper names.
 - `col(...)`, `faker(...)`, `fk(...)`, `pattern(...)`, and `regex(...)` calls without the required string literal argument shape.
 - `regex(...)` patterns that request more than 256 digits.
+- `faker(...)` names that are not lower-case public identifiers, or that name a blocked binary provider (`dsl_unsupported_faker_provider`).
 - Keyword unpacking.
 - More than one aggregate helper in one DSL expression.
 - `group_sum(...)` unless it uses exactly `key=...` and `value=...`.

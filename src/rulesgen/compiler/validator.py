@@ -6,6 +6,7 @@ from rulesgen.compiler.limits import (
     MAX_REGEX_DIGITS,
     REGEX_HELPER_PATTERN,
     DSLValueLimitExceeded,
+    is_allowed_faker_provider_name,
     regex_digit_count,
 )
 from rulesgen.compiler.types import ValidatedExpression
@@ -175,6 +176,7 @@ class DSLValidator(ast.NodeVisitor):
             self._validate_col_call(node)
         elif function_name == "faker":
             self._validate_single_string_literal_call(node, code="dsl_invalid_faker_call")
+            self._validate_faker_provider(node)
         elif function_name == "fk":
             self._validate_single_string_literal_call(node, code="dsl_invalid_fk_call")
         elif function_name in {"pattern", "regex"}:
@@ -256,6 +258,26 @@ class DSLValidator(ast.NodeVisitor):
                     )
                 ],
             )
+
+    def _validate_faker_provider(self, node: ast.Call) -> None:
+        literal = node.args[0]
+        if not isinstance(literal, ast.Constant) or not isinstance(literal.value, str):
+            return
+        if is_allowed_faker_provider_name(literal.value):
+            return
+        raise DSLValidationFailed(
+            "faker() requires the name of a public Faker provider.",
+            errors=[
+                Diagnostic(
+                    level=DiagnosticLevel.ERROR,
+                    code="dsl_unsupported_faker_provider",
+                    message=(
+                        f"Faker provider {literal.value!r} is not allowed; use a lower-case "
+                        'provider name such as faker("name").'
+                    ),
+                )
+            ],
+        )
 
     def _validate_regex_digit_count(self, node: ast.Call) -> None:
         literal = node.args[0]

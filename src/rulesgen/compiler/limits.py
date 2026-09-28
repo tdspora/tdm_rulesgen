@@ -21,6 +21,12 @@ MAX_REGEX_DIGITS: Final = 256
 REGEX_HELPER_PATTERN: Final = re.compile(r"\^([A-Za-z-]+)\[0-9\]\{(\d+)\}\$")
 """The only pattern shape the ``regex(...)`` runtime helper supports."""
 
+FAKER_PROVIDER_NAME_PATTERN: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
+"""Shape of a public Faker provider name accepted by ``faker(...)``."""
+
+BLOCKED_FAKER_PROVIDERS: Final = frozenset({"binary", "image", "json_bytes", "tar", "zip"})
+"""Faker providers that emit binary payloads (``binary`` defaults to 1 MiB per call)."""
+
 _TEXT_TYPES: Final = (str, bytes, bytearray)
 _SEQUENCE_TYPES: Final = (str, bytes, bytearray, list, tuple)
 _EXHAUSTED: Final = object()
@@ -64,6 +70,20 @@ def bounded_value_size(value: Any, limit: int) -> int:
         if total > limit:
             break
     return total
+
+
+def is_allowed_faker_provider_name(name: str) -> bool:
+    """Return whether ``name`` may be passed to ``faker(...)``.
+
+    Only lower-case public identifiers are accepted, which rules out dunder and
+    private attributes of the Faker proxy; binary-producing providers are
+    blocked. The runtime helper additionally checks that the name resolves to a
+    real provider method.
+    """
+    return (
+        FAKER_PROVIDER_NAME_PATTERN.fullmatch(name) is not None
+        and name not in BLOCKED_FAKER_PROVIDERS
+    )
 
 
 def regex_digit_count(count_text: str) -> int:
@@ -146,12 +166,15 @@ def _content_size(sequence: Any, limit: int) -> int:
 
 
 __all__ = [
+    "BLOCKED_FAKER_PROVIDERS",
     "DEFAULT_MAX_VALUE_LENGTH",
     "DSLValueLimitExceeded",
+    "FAKER_PROVIDER_NAME_PATTERN",
     "MAX_REGEX_DIGITS",
     "REGEX_HELPER_PATTERN",
     "apply_checked_binop",
     "bounded_value_size",
     "ensure_value_within_limit",
+    "is_allowed_faker_provider_name",
     "regex_digit_count",
 ]
