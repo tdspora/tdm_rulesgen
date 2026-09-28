@@ -15,18 +15,19 @@ from rulesgen.compiler.limits import (
     DEFAULT_MAX_VALUE_LENGTH,
     REGEX_HELPER_PATTERN,
     DSLValueLimitExceeded,
-    apply_checked_binop,
-    ensure_value_within_limit,
+    ValueSizer,
     is_allowed_faker_provider_name,
     regex_digit_count,
 )
 
 CHECKED_BINOP_HELPER: Final = "__rulesgen_binop__"
-"""Internal runtime local that evaluates arithmetic operators with size checks.
+CHECKED_LIST_HELPER: Final = "__rulesgen_list__"
+CHECKED_TUPLE_HELPER: Final = "__rulesgen_tuple__"
+"""Internal runtime locals that evaluate operators and literals with size checks.
 
-The name is never reachable from DSL input: the validator rejects bare names and
-calls to anything outside the helper whitelist, and the rewrite that introduces
-this name runs only after validation.
+These names are never reachable from DSL input: the validator rejects bare names
+and calls to anything outside the helper whitelist, and the rewrite that
+introduces them runs only after validation.
 """
 
 
@@ -41,15 +42,17 @@ class RuntimeContext:
     max_value_length: int = DEFAULT_MAX_VALUE_LENGTH
     rng: random.Random = field(init=False)
     faker_instance: Faker = field(init=False)
+    sizer: ValueSizer = field(init=False)
 
     def __post_init__(self) -> None:
         self.rng = random.Random(self.seed)
         self.faker_instance = Faker()
         self.faker_instance.seed_instance(self.seed)
+        self.sizer = ValueSizer(self.max_value_length)
 
 
 class _CheckedOperatorTransformer(ast.NodeTransformer):
-    """Route every validated ``BinOp`` through :data:`CHECKED_BINOP_HELPER`."""
+    """Route validated operators and list/tuple literals through checked helpers."""
 
     def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
         self.generic_visit(node)
@@ -60,15 +63,30 @@ class _CheckedOperatorTransformer(ast.NodeTransformer):
         )
         return ast.copy_location(call, node)
 
+    def visit_List(self, node: ast.List) -> ast.AST:
+        return self._checked_literal(node, CHECKED_LIST_HELPER)
+
+    def visit_Tuple(self, node: ast.Tuple) -> ast.AST:
+        return self._checked_literal(node, CHECKED_TUPLE_HELPER)
+
+    def _checked_literal(self, node: ast.List | ast.Tuple, helper: str) -> ast.AST:
+        self.generic_visit(node)
+        call = ast.Call(
+            func=ast.Name(id=helper, ctx=ast.Load()),
+            args=list(node.elts),
+            keywords=[],
+        )
+        return ast.copy_location(call, node)
+
 
 def compile_validated_expression(
     tree: ast.Expression, *, filename: str = "<rulesgen-dsl>"
 ) -> CodeType:
     """Compile a validated AST into the code object stored on a compiled rule.
 
-    Arithmetic operators are rewritten into calls to the checked operator helper
-    so their results are size-bounded at runtime. The caller's tree is not
-    modified.
+    Arithmetic operators and list/tuple literals are rewritten into calls to the
+    checked runtime helpers so their results are size-bounded at runtime. The
+    caller's tree is not modified.
     """
     checked_tree = _CheckedOperatorTransformer().visit(copy.deepcopy(tree))
     ast.fix_missing_locations(checked_tree)
@@ -77,6 +95,7 @@ def compile_validated_expression(
 
 def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
     limit = context.max_value_length
+    sizer = context.sizer
 
     def bounded_text(text: str, helper: str) -> str:
         if len(text) > limit:
@@ -84,9 +103,6 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
                 f"{helper} result exceeds the configured limit of {limit} units."
             )
         return text
-
-    def checked_binop(operator: str, left: Any, right: Any) -> Any:
-        return apply_checked_binop(operator, left, right, limit=limit)
 
     def col(name: str) -> Any:
         return context.row.get(name)
@@ -98,12 +114,19 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         return None
 
     def lower(value: Any) -> str:
+        # Measure before converting, so str() never renders an oversized value.
+        sizer.ensure_within_limit(value, context="lower() argument")
         return bounded_text(str(value).lower(), "lower()")
 
     def upper(value: Any) -> str:
+        sizer.ensure_within_limit(value, context="upper() argument")
         return bounded_text(str(value).upper(), "upper()")
 
     def concat(*args: Any) -> str:
+        if sum(sizer.size(arg) for arg in args) > limit:
+            raise DSLValueLimitExceeded(
+                f"concat() arguments exceed the configured limit of {limit} units."
+            )
         parts = [str(arg) for arg in args]
         if sum(len(part) for part in parts) > limit:
             raise DSLValueLimitExceeded(
@@ -142,7 +165,7 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         ):
             raise ValueError(f"Unsupported Faker provider: {provider!r}")
         value = provider_fn()
-        ensure_value_within_limit(value, limit, context="faker() result")
+        sizer.ensure_within_limit(value, context="faker() result")
         return value
 
     def pattern(fmt: str) -> str:
@@ -186,7 +209,9 @@ def build_runtime_locals(context: RuntimeContext) -> dict[str, Any]:
         return context.aggregate_lookup.get(key)
 
     return {
-        CHECKED_BINOP_HELPER: checked_binop,
+        CHECKED_BINOP_HELPER: sizer.checked_binop,
+        CHECKED_LIST_HELPER: sizer.checked_list,
+        CHECKED_TUPLE_HELPER: sizer.checked_tuple,
         "choice": choice,
         "clamp": clamp,
         "coalesce": coalesce,

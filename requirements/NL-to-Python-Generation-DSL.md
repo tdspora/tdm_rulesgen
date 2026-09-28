@@ -34,8 +34,8 @@ The parser enforces `RULESGEN_DSL_MAX_LENGTH`, currently defaulting to 2000 char
 
 The syntax limits above do not bound what a short expression produces when it runs, so evaluation is bounded separately (see [limits.py](../src/rulesgen/compiler/limits.py)):
 
-- `RULESGEN_DSL_MAX_VALUE_LENGTH`, currently defaulting to 1,048,576, caps every value an expression produces: the results of `+` and `*` on strings, lists, and tuples, the results of `concat`, `lower`, `upper`, `pattern`, `regex`, and `faker`, and the final rule result. Text counts one unit per character; a list or tuple counts one unit plus its expanded contents, so repeated references count every time they appear; any other value counts one unit.
-- `+`, `*`, and `concat(...)` are refused before an oversized value is built. The other helper results and the final rule result are checked right after they are produced.
+- `RULESGEN_DSL_MAX_VALUE_LENGTH`, currently defaulting to 1,048,576, caps every value an expression produces: the results of `+` and `*` on strings, lists, and tuples, list and tuple literals, the results of `concat`, `lower`, `upper`, `pattern`, `regex`, and `faker`, and the final rule result. Sizes follow the printed form of a value. Text counts one unit per character, numbers count their digits, and other values count the length of their printed form. A list or tuple counts one unit plus, for each element, the element's size and one separator unit, so repeated references count every time they appear.
+- `+`, `*`, list and tuple literals, `concat(...)`, `lower(...)`, and `upper(...)` are checked before the value is built or printed. The other helper results and the final rule result are checked right after they are produced. Lists and tuples built by an expression carry their measured size, so later operators do not measure them again.
 - `regex(...)` accepts at most 256 digits. Larger counts are rejected at compile time with `dsl_validation_failed` and the `dsl_regex_too_long` diagnostic.
 - An exceeded limit fails preview with a `validation_failed` error. A dataset generation job finishes with status `failed` and the reason in its `error` field.
 
@@ -89,7 +89,7 @@ Compilation is implemented by [RuleCompilerService.compile](../src/rulesgen/comp
 
 1. Parses the expression.
 2. Validates it with `DSLValidator`.
-3. Rewrites the arithmetic operators of a copy of the validated AST into calls to an internal checked-operator helper that enforces the runtime limits, then compiles it with Python's `compile(..., mode="eval")` through `compile_validated_expression` in [runtime_spec.py](../src/rulesgen/compiler/runtime_spec.py). The helper name is not callable from DSL input because the validator rejects it like any other unknown helper.
+3. Rewrites the arithmetic operators and list and tuple literals of a copy of the validated AST into calls to internal checked helpers that enforce the runtime limits, then compiles it with Python's `compile(..., mode="eval")` through `compile_validated_expression` in [runtime_spec.py](../src/rulesgen/compiler/runtime_spec.py). The helper names are not callable from DSL input because the validator rejects them like any other unknown helper.
 4. Produces a `CompiledRule` with:
    - `artifact_id`
    - `target_column`

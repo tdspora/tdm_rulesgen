@@ -8,6 +8,7 @@ from hypothesis import strategies as st
 
 from rulesgen.compiler.limits import (
     DSLValueLimitExceeded,
+    ValueSizer,
     apply_checked_binop,
     bounded_value_size,
 )
@@ -100,3 +101,39 @@ def test_faker_helper_rejects_non_provider_attributes_without_validator(provider
 
     with pytest.raises(ValueError, match="Unsupported Faker provider"):
         faker(provider)
+
+
+_ELEMENTS = st.one_of(
+    st.integers(min_value=-(10**40), max_value=10**40),
+    st.floats(allow_nan=False),
+    st.text(max_size=6),
+    st.none(),
+    st.booleans(),
+)
+
+
+def _plain(value: object) -> object:
+    """Copy a value built by the checked helpers into plain lists and tuples."""
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_plain(item) for item in value)
+    return value
+
+
+@given(
+    items=st.lists(_ELEMENTS, max_size=5),
+    nested=st.lists(_ELEMENTS, max_size=3),
+    count=st.integers(min_value=0, max_value=6),
+)
+def test_carried_sizes_match_a_fresh_walk(
+    items: list[object], nested: list[object], count: int
+) -> None:
+    sizer = ValueSizer(10**9)
+    inner = sizer.checked_tuple(*nested)
+    literal = sizer.checked_list(*items, inner)
+    repeated = sizer.checked_binop("Mult", literal, count)
+    combined = sizer.checked_binop("Add", repeated, sizer.checked_list(inner))
+
+    for value in (inner, literal, repeated, combined):
+        assert sizer.size(value) == bounded_value_size(_plain(value), 10**9)

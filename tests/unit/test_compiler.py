@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import time
+
 import pytest
 
 from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH, MAX_REGEX_DIGITS
@@ -350,3 +353,41 @@ def test_preview_rejects_faker_attributes_that_are_not_provider_methods(provider
 
     with pytest.raises(ValidationFailed, match="Unsupported Faker provider"):
         LocalExecutionAdapter().execute(compiled)
+
+
+@pytest.mark.parametrize(
+    ("expression", "row"),
+    [
+        ('[col("n")] * 1048575', {"n": 10**4000}),
+        (f"lower([{'1' * 1950}] * 1048575)", {}),
+        ('lower(col("items"))', {"items": [10**4000] * 300}),
+        ('concat(col("items"))', {"items": [10**4000] * 300}),
+    ],
+)
+def test_preview_sizes_numbers_by_their_digits(expression: str, row: dict[str, object]) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=expression, target_column="x")
+
+    with pytest.raises(ValidationFailed, match=f"limit of {DEFAULT_MAX_VALUE_LENGTH} units"):
+        LocalExecutionAdapter().execute(compiled, row=row)
+
+
+def test_preview_rejects_large_scalar_results_under_a_small_limit() -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression='col("n")', target_column="x")
+
+    with pytest.raises(ValidationFailed, match="limit of 100 units"):
+        LocalExecutionAdapter(max_value_length=100).execute(compiled, row={"n": 10**200})
+
+
+def test_repeated_operators_on_large_results_stay_fast() -> None:
+    compiler = build_compiler()
+    operand = "([[]] * 349525 * 1 * 1 * 1)"
+    compiled = compiler.compile(expression=" and ".join([operand] * 6), target_column="x")
+
+    started_at = time.perf_counter()
+    preview = LocalExecutionAdapter().execute(compiled)
+
+    assert time.perf_counter() - started_at < 2.0
+    assert len(preview.value) == 349525
+    assert json.loads(json.dumps(preview.value[:2])) == [[], []]

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH, ensure_value_within_limit
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.compiler.parser import parse_expression
 from rulesgen.compiler.runtime_spec import (
     RuntimeContext,
@@ -54,7 +54,7 @@ def execute_preview_rule(
     )
     locals_map = build_runtime_locals(runtime_context)
     value = eval(compiled_rule.code_object, {"__builtins__": {}}, locals_map)
-    ensure_value_within_limit(value, max_value_length, context="Rule result")
+    runtime_context.sizer.ensure_within_limit(value, context="Rule result")
     return value
 
 

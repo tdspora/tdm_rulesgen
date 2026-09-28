@@ -54,10 +54,13 @@ These limits protect parser and validator behavior for untrusted rule input.
 Evaluation is bounded separately by `RULESGEN_DSL_MAX_VALUE_LENGTH` (default
 `1048576`). No value a rule produces during preview or dataset generation may
 be larger than this: operator results, helper results such as `concat(...)`,
-and the final rule result. Text counts one unit per character, a list or tuple
-counts one unit plus its expanded contents, and any other value counts one
-unit. `+`, `*`, and `concat(...)` are refused before an oversized value is
-built; other results are checked right after they are produced.
+and the final rule result. Sizes follow the printed form of a value: text
+counts one unit per character, numbers count their digits, other values count
+the length of their printed form, and a list or tuple counts one unit plus,
+for each element, the element's size and one separator unit. `+`, `*`, list
+and tuple literals, `concat(...)`, `lower(...)`, and `upper(...)` are checked
+before the value is built or printed; other results are checked right after
+they are produced.
 
 When a limit is exceeded, a preview request fails with a `validation_failed`
 Problem Details response, and a dataset generation job finishes with status
