@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from rulesgen import (
     SourceType,
+    ValidationFailed,
     build_container,
     compile_rule,
     download_job_artifact,
@@ -115,3 +118,17 @@ def test_package_root_download_helpers_copy_job_artifacts(tmp_path: Path) -> Non
 
     assert json.loads(dataset_copy.read_text(encoding="utf-8")) == [{"order_id": "A"}]
     assert json.loads(manifest_copy.read_text(encoding="utf-8"))["job_id"] == job.job_id
+
+
+def test_preview_rule_honors_configured_value_limit(tmp_path: Path, monkeypatch) -> None:
+    compiled_rule = compile_rule(
+        'concat("abc", "defgh")', target_column="code", settings=build_settings(tmp_path)
+    )
+
+    assert preview_rule(compiled_rule).value == "abcdefgh"
+    with pytest.raises(ValidationFailed, match="limit of 5 units"):
+        preview_rule(compiled_rule, settings=Settings(dsl_max_value_length=5))
+
+    monkeypatch.setenv("RULESGEN_DSL_MAX_VALUE_LENGTH", "5")
+    with pytest.raises(ValidationFailed, match="limit of 5 units"):
+        preview_rule(compiled_rule)
