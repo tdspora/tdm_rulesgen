@@ -197,18 +197,20 @@ Semantic-cache settings:
 Cache entries are scoped by prompt version, model, table, schema fingerprint,
 and requested targets.
 
-A cache hit also requires the same prompt text, compared after collapsing
-whitespace. Embedding similarity alone never reuses another prompt's
-translation, because one word such as "higher" or "lower" can invert a rule.
+A cache hit also requires exactly the same prompt text, including whitespace.
+Embedding similarity alone never reuses another prompt's translation, because
+one word such as "higher" or "lower" can invert a rule.
 `RULESGEN_LLM_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` remains an additional
 gate.
 
 Cache files store a SHA-256 digest of each prompt instead of the prompt text,
-next to the cached DSL translation and a hashed embedding of the prompt. A
-file written by an earlier version keeps its raw prompt text until that cache
-scope is next used, when it is rewritten to digests. Delete the
-`RULESGEN_LLM_SEMANTIC_CACHE_DIR` directory after upgrading to remove older
-prompt text immediately.
+next to the cached DSL translation and a hashed embedding of the prompt. When
+the API starts and uses the semantic cache, it rewrites cache files from
+earlier versions, which stored the prompt text, to digests. It logs a warning
+for each file it cannot read and leaves that file in place. If the API does
+not use the semantic cache, for example because it is turned off, delete the
+`RULESGEN_LLM_SEMANTIC_CACHE_DIR` directory to remove prompt text that earlier
+versions stored.
 
 ## Guardrails
 

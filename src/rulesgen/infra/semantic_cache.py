@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import numpy as np
 
@@ -90,21 +92,73 @@ from rulesgen.domain.models import CacheInsight
 # can carry customer data and logs must stay data-free at every level.
 gptcache_log.setLevel(logging.WARNING)
 
-_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
+logger = logging.getLogger(__name__)
+
+QUESTION_DIGEST_FIELD: Final = "question_sha256"
+"""Cache entry field that holds the digest of the prompt the entry was stored for."""
+
+_LEGACY_QUESTION_FIELD: Final = "question"
+"""Cache entry field in which earlier versions stored the prompt text itself."""
 
 
 def prompt_digest(prompt_text: str) -> str:
-    """SHA-256 digest of a prompt with runs of whitespace collapsed.
+    """SHA-256 digest of the exact prompt text.
 
     Cache entries store this digest instead of the prompt text, and a lookup only
-    hits entries whose digest equals the digest of the new prompt.
+    hits entries whose digest equals the digest of the new prompt. The text is not
+    normalized, because whitespace inside a quoted value can change a rule.
     """
-    normalized = " ".join(prompt_text.split())
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
 
 
-def _as_digest(question: str) -> str:
-    return question if _DIGEST_PATTERN.fullmatch(question) else prompt_digest(question)
+def migrate_cache_files(root_dir: Path) -> None:
+    """Replace the prompt text in cache files written by earlier versions.
+
+    A file is also converted when its scope is next used, but a scope that is
+    never used again would otherwise keep its prompt text on disk. Files that
+    cannot be read are left in place and reported.
+    """
+    for path in sorted(root_dir.glob("*.json")):
+        try:
+            entries, migrated = _read_entries(path)
+        except (OSError, ValueError):
+            logger.warning("Skipped unreadable semantic-cache file %s.", path.name)
+            continue
+        if migrated:
+            _write_entries(path, entries)
+
+
+def _read_entries(path: Path) -> tuple[list[dict[str, Any]], bool]:
+    """Read a cache file and whether any entry had to be converted to a digest."""
+    if not path.exists():
+        return [], False
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        return [], False
+    entries: list[dict[str, Any]] = []
+    migrated = False
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        entry = dict(item)
+        if _LEGACY_QUESTION_FIELD in entry:
+            question = entry.pop(_LEGACY_QUESTION_FIELD)
+            entry.setdefault(QUESTION_DIGEST_FIELD, prompt_digest(str(question)))
+            migrated = True
+        entries.append(entry)
+    return entries, migrated
+
+
+def _write_entries(path: Path, entries: list[dict[str, Any]]) -> None:
+    """Replace a cache file in one step, so a failed write never leaves it truncated."""
+    handle, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(entries, stream, indent=2, sort_keys=True)
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @dataclass(slots=True)
@@ -152,7 +206,7 @@ class JsonVectorDataManager(DataManager):
         self.storage_path = storage_path
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
-        self._entries, migrated = self._load_entries()
+        self._entries, migrated = _read_entries(self.storage_path)
         if migrated:
             # Rewrite entries written by earlier versions so their raw prompt
             # text does not stay on disk.
@@ -186,7 +240,7 @@ class JsonVectorDataManager(DataManager):
                 self._entries.append(
                     {
                         "id": next_id,
-                        "question": _as_digest(str(question)),
+                        QUESTION_DIGEST_FIELD: prompt_digest(str(question)),
                         "answer": str(answer),
                         "embedding": np.asarray(embedding, dtype=np.float32).tolist(),
                     }
@@ -200,7 +254,7 @@ class JsonVectorDataManager(DataManager):
         for entry in self._entries:
             if entry["id"] == entry_id:
                 return CacheData(
-                    question=entry["question"],
+                    question=entry[QUESTION_DIGEST_FIELD],
                     answers=entry["answer"],
                     embedding_data=np.asarray(entry["embedding"], dtype=np.float32),
                 )
@@ -236,26 +290,7 @@ class JsonVectorDataManager(DataManager):
 
     def flush(self) -> None:
         with self._lock:
-            self.storage_path.write_text(
-                json.dumps(self._entries, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-
-    def _load_entries(self) -> tuple[list[dict[str, Any]], bool]:
-        if not self.storage_path.exists():
-            return [], False
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
-        if not isinstance(payload, list):
-            return [], False
-        entries = [dict(item) for item in payload if isinstance(item, dict)]
-        migrated = False
-        for entry in entries:
-            question = str(entry.get("question", ""))
-            digest = _as_digest(question)
-            if digest != question:
-                entry["question"] = digest
-                migrated = True
-        return entries, migrated
+            _write_entries(self.storage_path, self._entries)
 
 
 class ExactPromptEvaluation(SearchDistanceEvaluation):
@@ -291,6 +326,7 @@ class GPTSemanticTranslationCache:
     ) -> None:
         self.root_dir = root_dir
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        migrate_cache_files(self.root_dir)
         self.similarity_threshold = similarity_threshold
         self.embedding_dimension = embedding_dimension
         self._embedding = HashingEmbedding(dimension=embedding_dimension)

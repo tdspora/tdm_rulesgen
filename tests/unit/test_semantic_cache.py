@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TextIO
 
 import pytest
 
+from rulesgen.infra import semantic_cache
 from rulesgen.infra.semantic_cache import (
+    QUESTION_DIGEST_FIELD,
     GPTSemanticTranslationCache,
     HashingEmbedding,
     prompt_digest,
@@ -34,13 +37,21 @@ def test_identical_prompt_hits_the_cache(tmp_path: Path) -> None:
     assert hit.cache.hit is True
 
 
-def test_whitespace_only_differences_still_hit(tmp_path: Path) -> None:
-    cache = _cache(tmp_path)
-    cache.put(scope_key=SCOPE, prompt_text=STORED_PROMPT, response_text=STORED_RESPONSE)
+@pytest.mark.parametrize(
+    ("stored", "queried"),
+    [
+        ('- status: set to "on hold"', '- status: set to "on  hold"'),
+        (STORED_PROMPT, f"  {STORED_PROMPT}\n"),
+    ],
+)
+def test_prompts_that_differ_only_in_whitespace_do_not_share_an_entry(
+    tmp_path: Path, stored: str, queried: str
+) -> None:
+    cache = _cache(tmp_path, threshold=0.0)
+    cache.put(scope_key=SCOPE, prompt_text=stored, response_text=STORED_RESPONSE)
 
-    hit = cache.get(scope_key=SCOPE, prompt_text=f"  {STORED_PROMPT.replace(' ', '   ')}\n")
-
-    assert hit is not None
+    assert cache.get(scope_key=SCOPE, prompt_text=queried) is None
+    assert cache.get(scope_key=SCOPE, prompt_text=stored) is not None
 
 
 @pytest.mark.parametrize("threshold", [0.0, 0.82, 0.99])
@@ -75,27 +86,99 @@ def test_cache_files_store_prompt_digests_not_prompt_text(tmp_path: Path) -> Non
     assert len(stored_files) == 1
     raw = stored_files[0].read_text(encoding="utf-8")
     assert "quantity is 5 or higher" not in raw
-    assert json.loads(raw)[0]["question"] == prompt_digest(STORED_PROMPT)
+    [entry] = json.loads(raw)
+    assert entry[QUESTION_DIGEST_FIELD] == prompt_digest(STORED_PROMPT)
+    assert "question" not in entry
 
 
-def test_legacy_cache_files_are_migrated_to_digests(tmp_path: Path) -> None:
-    seeding_cache = _cache(tmp_path / "seed")
-    seeding_cache.put(scope_key=SCOPE, prompt_text=STORED_PROMPT, response_text=STORED_RESPONSE)
-    seeded_file = next((tmp_path / "seed").glob("*.json"))
+def test_prompts_that_look_like_digests_are_hashed_too(tmp_path: Path) -> None:
+    cache = _cache(tmp_path, threshold=0.0)
+    # Stored verbatim, this prompt would be the entry for STORED_PROMPT.
+    cache.put(scope_key=SCOPE, prompt_text=prompt_digest(STORED_PROMPT), response_text='"planted"')
+
+    assert cache.get(scope_key=SCOPE, prompt_text=STORED_PROMPT) is None
+
+
+def _write_legacy_cache_file(root: Path, seed_root: Path) -> Path:
+    """Write a cache file in the format of earlier versions, with the prompt text."""
+    _cache(seed_root).put(scope_key=SCOPE, prompt_text=STORED_PROMPT, response_text=STORED_RESPONSE)
+    seeded_file = next(seed_root.glob("*.json"))
     legacy_entries = json.loads(seeded_file.read_text(encoding="utf-8"))
-    legacy_entries[0]["question"] = STORED_PROMPT
-    legacy_dir = tmp_path / "legacy"
-    legacy_dir.mkdir()
-    legacy_file = legacy_dir / seeded_file.name
+    for entry in legacy_entries:
+        del entry[QUESTION_DIGEST_FIELD]
+        entry["question"] = STORED_PROMPT
+    root.mkdir(parents=True, exist_ok=True)
+    legacy_file = root / seeded_file.name
     legacy_file.write_text(json.dumps(legacy_entries), encoding="utf-8")
+    return legacy_file
 
-    cache = _cache(legacy_dir)
+
+def _assert_migrated(legacy_file: Path) -> None:
+    migrated = legacy_file.read_text(encoding="utf-8")
+    assert "quantity is 5 or higher" not in migrated
+    [entry] = json.loads(migrated)
+    assert entry[QUESTION_DIGEST_FIELD] == prompt_digest(STORED_PROMPT)
+    assert "question" not in entry
+
+
+def test_legacy_cache_files_are_migrated_when_the_cache_starts(tmp_path: Path) -> None:
+    legacy_file = _write_legacy_cache_file(tmp_path / "legacy", tmp_path / "seed")
+
+    cache = _cache(tmp_path / "legacy")
+
+    # Converted before its scope is used.
+    _assert_migrated(legacy_file)
+    hit = cache.get(scope_key=SCOPE, prompt_text=STORED_PROMPT)
+    assert hit is not None
+    assert hit.response_text == STORED_RESPONSE
+
+
+def test_legacy_cache_files_added_later_are_migrated_when_their_scope_is_used(
+    tmp_path: Path,
+) -> None:
+    cache = _cache(tmp_path / "legacy")
+    legacy_file = _write_legacy_cache_file(tmp_path / "legacy", tmp_path / "seed")
+
     hit = cache.get(scope_key=SCOPE, prompt_text=STORED_PROMPT)
 
     assert hit is not None
-    migrated = legacy_file.read_text(encoding="utf-8")
-    assert "quantity is 5 or higher" not in migrated
-    assert json.loads(migrated)[0]["question"] == prompt_digest(STORED_PROMPT)
+    _assert_migrated(legacy_file)
+
+
+def test_unreadable_cache_files_are_reported_and_left_in_place(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    broken_file = tmp_path / "broken.json"
+    broken_file.write_text('[{"question": "quantity is 5 or higher"', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="rulesgen.infra.semantic_cache"):
+        _cache(tmp_path)
+
+    assert "broken.json" in caplog.text
+    assert "quantity" not in caplog.text
+    assert broken_file.read_text(encoding="utf-8") == '[{"question": "quantity is 5 or higher"'
+
+
+def test_failed_cache_writes_keep_the_previous_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = _cache(tmp_path)
+    cache.put(scope_key=SCOPE, prompt_text=STORED_PROMPT, response_text=STORED_RESPONSE)
+    [cache_file] = tmp_path.glob("*.json")
+    before = cache_file.read_text(encoding="utf-8")
+
+    def failing_dump(payload: object, stream: TextIO, **kwargs: object) -> None:
+        del payload, kwargs
+        stream.write('[{"id": 1, ')
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(semantic_cache.json, "dump", failing_dump)
+
+    with pytest.raises(OSError, match="No space left"):
+        cache.put(scope_key=SCOPE, prompt_text="- total: price plus tax", response_text="[]")
+
+    assert cache_file.read_text(encoding="utf-8") == before
+    assert sorted(path.name for path in tmp_path.iterdir()) == [cache_file.name]
 
 
 def test_gptcache_debug_logging_is_suppressed() -> None:
