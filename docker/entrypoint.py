@@ -28,12 +28,14 @@ def _configured_directories() -> tuple[Path, ...]:
 
 
 def _chown_tree(path: Path, *, uid: int, gid: int) -> None:
+    # The configured directory itself is operator-controlled and may be a symlink
+    # (for example to a mounted volume), so it is resolved. Everything below it
+    # can be written by the unprivileged app user and is changed without
+    # following symlinks, so a planted link cannot hand root-owned files to it.
+    os.chown(path, uid, gid)
     for current_root, dir_names, file_names in os.walk(path):
-        os.chown(current_root, uid, gid)
-        for dir_name in dir_names:
-            os.chown(Path(current_root) / dir_name, uid, gid)
-        for file_name in file_names:
-            os.chown(Path(current_root) / file_name, uid, gid)
+        for name in (*dir_names, *file_names):
+            os.chown(Path(current_root) / name, uid, gid, follow_symlinks=False)
 
 
 def _prepare_directories(*paths: Path, uid: int, gid: int) -> None:
