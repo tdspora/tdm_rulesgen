@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import types
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from rulesgen.infra.guardrails import (
     HeuristicGuardrailScanner,
 )
 from rulesgen.infra.llm_gateway import (
+    STUB_MAX_SOURCE_TEXT_LENGTH,
     DatabricksOpenAIGatewayClient,
     LiteLLMGatewayClient,
     StubLLMGatewayClient,
@@ -656,3 +658,74 @@ def test_stub_gateway_screens_before_emitting_response_audit() -> None:
     saved = list(audits._records.values())  # type: ignore[attr-defined]
     assert len(saved) == 1
     assert saved[0].prompt_kind == "guardrail_blocked"
+
+
+def _stub_client() -> StubLLMGatewayClient:
+    return StubLLMGatewayClient(
+        prompt_template_version="v1",
+        model_name="rulesgen-local-stub",
+        audit_repository=InMemoryPromptAuditRepository(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_text", "expected_rule"),
+    [
+        (
+            "If job_level is 5 or higher, set bonus to 12.5 percent of salary.",
+            '0.125 * col("salary") if col("job_level") >= 5 else 0',
+        ),
+        ("Use a realistic full name.", 'faker("name")'),
+        ("Should reference an existing customers.customer_id", 'fk("customers.customer_id")'),
+        (
+            "Sum of line_amount per order_id",
+            'group_sum(key=col("order_id"), value=col("line_amount"))',
+        ),
+        ("Codes look like AB-0000", 'pattern("AB-####")'),
+        ("Set total to bonus plus salary.", 'col("bonus") + col("salary")'),
+        ("Set total to bonus+salary.", 'col("bonus") + col("salary")'),
+    ],
+)
+def test_stub_translator_templates(source_text: str, expected_rule: str) -> None:
+    item = _stub_client()._translate_stub("target", source_text)
+
+    assert item.error is None
+    assert item.dsl_candidate == expected_rule
+
+
+def test_stub_translator_rejects_overlong_input() -> None:
+    item = _stub_client()._translate_stub(
+        "target", "bonus plus salary " + "a" * STUB_MAX_SOURCE_TEXT_LENGTH
+    )
+
+    assert item.error == "unsupported"
+    assert item.dsl_candidate is None
+    assert [diagnostic.code for diagnostic in item.diagnostics] == ["nl_translation_input_too_long"]
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        "a" * STUB_MAX_SOURCE_TEXT_LENGTH,
+        "if a 1 or higher " + "1" * (STUB_MAX_SOURCE_TEXT_LENGTH - 20),
+        "if a 1 or higher " * (STUB_MAX_SOURCE_TEXT_LENGTH // 17),
+        "reference " + "a" * (STUB_MAX_SOURCE_TEXT_LENGTH - 10),
+        "sum of " + "a " * ((STUB_MAX_SOURCE_TEXT_LENGTH - 7) // 2),
+    ],
+)
+def test_stub_translator_handles_adversarial_input_quickly(source_text: str) -> None:
+    started_at = time.perf_counter()
+    item = _stub_client()._translate_stub("target", source_text)
+
+    assert time.perf_counter() - started_at < 0.5
+    assert item.error == "unsupported"
+
+
+def test_stub_arithmetic_template_is_linear_time() -> None:
+    from rulesgen.infra.llm_gateway import _STUB_ARITHMETIC_RE, _STUB_CONDITIONAL_RE
+
+    started_at = time.perf_counter()
+    assert _STUB_ARITHMETIC_RE.search("a" * 200_000) is None
+    assert _STUB_CONDITIONAL_RE.search("if a 1 or higher " + "1" * 200_000) is None
+
+    assert time.perf_counter() - started_at < 1.0

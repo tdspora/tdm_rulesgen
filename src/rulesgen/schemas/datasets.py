@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 
 from rulesgen.domain.models import ColumnSource, JobStatus
 from rulesgen.domain.uploads import DatasetInputFormat
-from rulesgen.schemas.common import StrictModel
+from rulesgen.schemas.common import RuleSourceText, StrictModel
 from rulesgen.schemas.rules import (
     DiagnosticSchema,
     LLMRequestMetricsSchema,
@@ -18,7 +18,7 @@ from rulesgen.schemas.rules import (
 class RuleDraftSchema(StrictModel):
     target_column: str
     source_type: RequestSourceTypeSchema = RequestSourceTypeSchema.DSL
-    source_text: str | None = None
+    source_text: RuleSourceText | None = None
     expression: str | None = None
     artifact_id: str | None = None
 

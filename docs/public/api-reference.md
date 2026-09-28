@@ -32,7 +32,8 @@ schema row with embedded `source_text` and `source_type`.
 
 Common request fields:
 
-- `source_text`: the natural-language rule or DSL expression.
+- `source_text`: the natural-language rule or DSL expression, at most 4000
+  characters.
 - `source_type`: `natural_language`, `dsl`, or `domain_specific_language`.
 - `target_column`: required for top-level natural-language requests.
 - `table_name`: table context for translation and diagnostics.
@@ -167,7 +168,7 @@ Schema rows describe source and rule-generated columns. Common fields are:
 - `type`
 - `nullable`
 - `source`: `syngen`, `rule`, or `base`
-- `source_text`: rule text for rule-generated columns
+- `source_text`: rule text for rule-generated columns, at most 4000 characters
 - `source_type`: `natural_language`, `dsl`, or `domain_specific_language`
 - `artifact_id`
 - `notes`

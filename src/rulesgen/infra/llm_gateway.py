@@ -57,6 +57,34 @@ class _RawGatewayItem(BaseModel):
 
 _RAW_ITEMS_ADAPTER = TypeAdapter(list[_RawGatewayItem])
 
+STUB_MAX_SOURCE_TEXT_LENGTH = 1_000
+"""Longest natural-language rule the stub translator will try to match."""
+
+# Stub templates. Identifiers and numbers use possessive quantifiers, and the
+# unanchored ones use lookbehinds, so a match attempt does not rescan the same
+# run of characters from every start position. The length cap above bounds the
+# cost of whatever repetition remains (for example many "if ... or higher"
+# prefixes without a matching "percent of" clause).
+_IDENTIFIER = r"[a-zA-Z_][a-zA-Z0-9_]*+"
+_STUB_CONDITIONAL_RE = re.compile(
+    rf"if\s+(?P<condition_col>{_IDENTIFIER})"
+    r"(?:\s+is)?\s+(?P<threshold>\d++)\s+or\s+higher.*?"
+    r"(?<!\d)(?P<percent>\d++(?:\.\d++)?)\s+percent\s+of\s+"
+    rf"(?P<base_col>{_IDENTIFIER})"
+)
+_STUB_FOREIGN_KEY_RE = re.compile(
+    rf"reference(?:s)?\s+(?:an?\s+existing\s+)?({_IDENTIFIER}\.{_IDENTIFIER})"
+)
+_STUB_GROUP_SUM_RE = re.compile(
+    rf"sum(?: of)?\s+(?P<value>{_IDENTIFIER})\s+"
+    rf"(?:across|per|grouped by)\s+(?P<key>{_IDENTIFIER})"
+)
+_STUB_PATTERN_RE = re.compile(r"look like\s+([a-zA-Z0-9#-]+)")
+_STUB_ARITHMETIC_RE = re.compile(
+    rf"(?<![a-zA-Z0-9_])(?P<left>{_IDENTIFIER})\s*+(?:\+|plus)\s*"
+    rf"(?P<right>{_IDENTIFIER})"
+)
+
 
 class LLMGatewayClient(Protocol):
     def translate_batch(
@@ -469,17 +497,28 @@ class StubLLMGatewayClient(_BaseGatewayClient):
         )
 
     def _translate_stub(self, target_column: str, source_text: str) -> BatchTranslationItem:
+        if len(source_text) > STUB_MAX_SOURCE_TEXT_LENGTH:
+            return BatchTranslationItem(
+                target_column=target_column,
+                error="unsupported",
+                reason=(
+                    "The stub translator only handles rules of up to "
+                    f"{STUB_MAX_SOURCE_TEXT_LENGTH} characters."
+                ),
+                suggestion="Shorten the rule or configure an LLM gateway backend.",
+                diagnostics=[
+                    Diagnostic(
+                        level=DiagnosticLevel.WARNING,
+                        code="nl_translation_input_too_long",
+                        message="The natural-language input is too long for the stub translator.",
+                    )
+                ],
+                confidence=0.0,
+            )
+
         lowered = source_text.lower()
 
-        conditional = re.search(
-            (
-                r"if\s+(?P<condition_col>[a-zA-Z_][a-zA-Z0-9_]*)"
-                r"(?:\s+is)?\s+(?P<threshold>\d+)\s+or\s+higher.*?"
-                r"(?P<percent>\d+(?:\.\d+)?)\s+percent\s+of\s+"
-                r"(?P<base_col>[a-zA-Z_][a-zA-Z0-9_]*)"
-            ),
-            lowered,
-        )
+        conditional = _STUB_CONDITIONAL_RE.search(lowered)
         if conditional:
             percent = float(conditional.group("percent")) / 100.0
             return BatchTranslationItem(
@@ -505,10 +544,7 @@ class StubLLMGatewayClient(_BaseGatewayClient):
                 entities={"translation_mode": "faker-template"},
             )
 
-        foreign_key = re.search(
-            r"reference(?:s)?\s+(?:an?\s+existing\s+)?([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)",
-            lowered,
-        )
+        foreign_key = _STUB_FOREIGN_KEY_RE.search(lowered)
         if foreign_key:
             return BatchTranslationItem(
                 target_column=target_column,
@@ -519,13 +555,7 @@ class StubLLMGatewayClient(_BaseGatewayClient):
                 entities={"translation_mode": "foreign-key-template"},
             )
 
-        group_sum = re.search(
-            (
-                r"sum(?: of)?\s+(?P<value>[a-zA-Z_][a-zA-Z0-9_]*)\s+"
-                r"(?:across|per|grouped by)\s+(?P<key>[a-zA-Z_][a-zA-Z0-9_]*)"
-            ),
-            lowered,
-        )
+        group_sum = _STUB_GROUP_SUM_RE.search(lowered)
         if group_sum:
             return BatchTranslationItem(
                 target_column=target_column,
@@ -539,7 +569,7 @@ class StubLLMGatewayClient(_BaseGatewayClient):
                 entities={"translation_mode": "aggregate-template"},
             )
 
-        pattern_match = re.search(r"look like\s+([a-zA-Z0-9#-]+)", lowered)
+        pattern_match = _STUB_PATTERN_RE.search(lowered)
         if pattern_match:
             raw_pattern = pattern_match.group(1).upper()
             dsl_pattern = raw_pattern.replace("0", "#")
@@ -552,13 +582,7 @@ class StubLLMGatewayClient(_BaseGatewayClient):
                 entities={"translation_mode": "pattern-template"},
             )
 
-        arithmetic = re.search(
-            (
-                r"(?P<left>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\+|plus)\s*"
-                r"(?P<right>[a-zA-Z_][a-zA-Z0-9_]*)"
-            ),
-            lowered,
-        )
+        arithmetic = _STUB_ARITHMETIC_RE.search(lowered)
         if arithmetic:
             return BatchTranslationItem(
                 target_column=target_column,

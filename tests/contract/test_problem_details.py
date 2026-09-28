@@ -123,3 +123,28 @@ def test_regex_digit_limit_returns_problem_details(client) -> None:
     body = response.json()
     assert body["code"] == "dsl_validation_failed"
     assert [item["code"] for item in body["errors"]] == ["dsl_regex_too_long"]
+
+
+def test_overlong_rule_source_text_returns_problem_details(client) -> None:
+    response = client.post(
+        "/rules/parse",
+        json={
+            "source_text": "bonus plus salary " + "a" * 4_000,
+            "source_type": "natural_language",
+            "target_column": "bonus",
+            "schema_columns": ["bonus", "salary"],
+        },
+        headers=LOCALHOST_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "request_validation_failed"
+    assert body["errors"] == [
+        {
+            "loc": ["body", "source_text"],
+            "msg": "String should have at most 4000 characters",
+            "type": "string_too_long",
+        }
+    ]

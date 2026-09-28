@@ -12,7 +12,7 @@ from rulesgen.domain.models import (
     SchemaColumnSource,
     SourceType,
 )
-from rulesgen.schemas.common import StrictModel
+from rulesgen.schemas.common import RuleSourceText, StrictModel
 
 
 class RequestSourceTypeSchema(StrEnum):
@@ -34,7 +34,7 @@ class SchemaColumnDefinitionSchema(StrictModel):
     nullable: bool
     source: SchemaColumnSource
     notes: str | None = None
-    source_text: str | None = None
+    source_text: RuleSourceText | None = None
     source_type: RequestSourceTypeSchema | None = None
     artifact_id: str | None = None
 
@@ -127,7 +127,7 @@ class AggregateHelperSchema(StrictModel):
 
 
 class ParseRuleRequest(StrictModel):
-    source_text: str | None = None
+    source_text: RuleSourceText | None = None
     source_type: RequestSourceTypeSchema | None = None
     target_column: str | None = None
     table_name: str | None = None

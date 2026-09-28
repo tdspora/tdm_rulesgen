@@ -129,6 +129,10 @@ client. They are credential values at runtime and must never be committed.
 temperature parameter entirely. Use `RULESGEN_LLM_EXTRA_COMPLETION_PARAMS` for
 model-specific JSON options such as maximum-token or reasoning controls.
 
+The `stub` backend only matches its templates against rules of up to 1000
+characters and reports longer rules as unsupported. Independently of the
+backend, the HTTP API rejects rule `source_text` longer than 4000 characters.
+
 ## Databricks Gateway Settings
 
 The Databricks gateway is selected by `RULESGEN_LLM_PROVIDER=databricks`, or

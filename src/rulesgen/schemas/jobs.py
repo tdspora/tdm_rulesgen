@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import Field, model_validator
 
 from rulesgen.domain.models import ArtifactKind, JobKind, JobStatus
-from rulesgen.schemas.common import StrictModel
+from rulesgen.schemas.common import RuleSourceText, StrictModel
 from rulesgen.schemas.rules import (
     DiagnosticSchema,
     LLMRequestMetricsSchema,
@@ -25,7 +25,7 @@ class JobArtifactSchema(StrictModel):
 class JobRuleDraftSchema(StrictModel):
     target_column: str
     source_type: RequestSourceTypeSchema = RequestSourceTypeSchema.DSL
-    source_text: str | None = None
+    source_text: RuleSourceText | None = None
     expression: str | None = None
     artifact_id: str | None = None
 
