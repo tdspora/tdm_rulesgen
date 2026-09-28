@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import numpy as np
 
 if TYPE_CHECKING:
+    gptcache_log: logging.Logger
 
     class Cache:
         def init(self, **kwargs: Any) -> None: ...
@@ -46,6 +48,12 @@ if TYPE_CHECKING:
     class SearchDistanceEvaluation:
         def __init__(self, *, max_distance: float) -> None: ...
 
+        def evaluation(
+            self, src_dict: dict[str, Any], cache_dict: dict[str, Any], **kwargs: Any
+        ) -> float: ...
+
+        def range(self) -> tuple[float, float]: ...
+
     def get_prompt(data: Any, **kwargs: Any) -> str: ...
 
     def gptcache_get(
@@ -74,8 +82,29 @@ else:
     from gptcache.similarity_evaluation.distance import (  # type: ignore[import-untyped]
         SearchDistanceEvaluation,
     )
+    from gptcache.utils.log import gptcache_log  # type: ignore[import-untyped]
 
 from rulesgen.domain.models import CacheInsight
+
+# GPTCache logs the user prompt and the cached question at DEBUG level. Prompts
+# can carry customer data and logs must stay data-free at every level.
+gptcache_log.setLevel(logging.WARNING)
+
+_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
+
+
+def prompt_digest(prompt_text: str) -> str:
+    """SHA-256 digest of a prompt with runs of whitespace collapsed.
+
+    Cache entries store this digest instead of the prompt text, and a lookup only
+    hits entries whose digest equals the digest of the new prompt.
+    """
+    normalized = " ".join(prompt_text.split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _as_digest(question: str) -> str:
+    return question if _DIGEST_PATTERN.fullmatch(question) else prompt_digest(question)
 
 
 @dataclass(slots=True)
@@ -117,11 +146,17 @@ class HashingEmbedding(BaseEmbedding):
 
 
 class JsonVectorDataManager(DataManager):
+    """JSON-file vector store that persists prompt digests, never prompt text."""
+
     def __init__(self, storage_path: Path) -> None:
         self.storage_path = storage_path
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
-        self._entries = self._load_entries()
+        self._entries, migrated = self._load_entries()
+        if migrated:
+            # Rewrite entries written by earlier versions so their raw prompt
+            # text does not stay on disk.
+            self.flush()
 
     def save(self, question: Any, answer: Any, embedding_data: Any, **kwargs: Any) -> None:
         del kwargs
@@ -151,7 +186,7 @@ class JsonVectorDataManager(DataManager):
                 self._entries.append(
                     {
                         "id": next_id,
-                        "question": str(question),
+                        "question": _as_digest(str(question)),
                         "answer": str(answer),
                         "embedding": np.asarray(embedding, dtype=np.float32).tolist(),
                     }
@@ -206,13 +241,44 @@ class JsonVectorDataManager(DataManager):
                 encoding="utf-8",
             )
 
-    def _load_entries(self) -> list[dict[str, Any]]:
+    def _load_entries(self) -> tuple[list[dict[str, Any]], bool]:
         if not self.storage_path.exists():
-            return []
+            return [], False
         payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
-            return []
-        return [dict(item) for item in payload if isinstance(item, dict)]
+            return [], False
+        entries = [dict(item) for item in payload if isinstance(item, dict)]
+        migrated = False
+        for entry in entries:
+            question = str(entry.get("question", ""))
+            digest = _as_digest(question)
+            if digest != question:
+                entry["question"] = digest
+                migrated = True
+        return entries, migrated
+
+
+class ExactPromptEvaluation(SearchDistanceEvaluation):
+    """Similarity evaluation that only accepts entries stored for the same prompt.
+
+    A single word can invert the meaning of a rule ("5 or higher" versus
+    "5 or lower"), so embedding distance alone must never select another prompt's
+    translation. Entries whose digest differs from the query's digest get a rank
+    below GPTCache's minimum, which no similarity threshold can accept.
+    """
+
+    def evaluation(
+        self, src_dict: dict[str, Any], cache_dict: dict[str, Any], **kwargs: Any
+    ) -> float:
+        cached_question = cache_dict.get("question")
+        query_question = src_dict.get("question")
+        if (
+            not isinstance(cached_question, str)
+            or not isinstance(query_question, str)
+            or cached_question != prompt_digest(query_question)
+        ):
+            return -1.0
+        return float(super().evaluation(src_dict, cache_dict, **kwargs))
 
 
 class GPTSemanticTranslationCache:
@@ -271,7 +337,7 @@ class GPTSemanticTranslationCache:
                 pre_embedding_func=get_prompt,
                 embedding_func=self._embedding.to_embeddings,
                 data_manager=JsonVectorDataManager(self._storage_path(scope_key)),
-                similarity_evaluation=SearchDistanceEvaluation(max_distance=2.0),
+                similarity_evaluation=ExactPromptEvaluation(max_distance=2.0),
                 config=Config(
                     similarity_threshold=self.similarity_threshold,
                     enable_token_counter=False,

@@ -162,6 +162,14 @@ Semantic-cache settings:
 Cache entries are scoped by prompt version, model, table, schema fingerprint,
 and requested targets.
 
+A cache hit also requires the same prompt text, compared after collapsing
+whitespace. Embedding similarity alone never reuses another prompt's
+translation, because one word such as "higher" or "lower" can invert a rule.
+`RULESGEN_LLM_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` remains an additional
+gate. Cache files store a SHA-256 digest of each prompt instead of the prompt
+text, and files written by earlier versions are rewritten to digests when
+they are next loaded.
+
 ## Guardrails
 
 Guardrails scan natural-language rule input before it reaches the LLM gateway.
