@@ -181,6 +181,27 @@ def test_failed_cache_writes_keep_the_previous_file(
     assert sorted(path.name for path in tmp_path.iterdir()) == [cache_file.name]
 
 
+def test_cache_hits_never_hand_the_prompt_to_gptcache_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gptcache.manager.data_manager import DataManager
+
+    reports: list[tuple[object, ...]] = []
+
+    def recording_report_cache(self: object, *args: object) -> None:
+        del self
+        reports.append(args)
+
+    # GPTCache passes the raw prompt to report_cache on every hit. The base
+    # method records nothing today; stand in for one that does.
+    monkeypatch.setattr(DataManager, "report_cache", recording_report_cache)
+    cache = _cache(tmp_path)
+    cache.put(scope_key=SCOPE, prompt_text=STORED_PROMPT, response_text=STORED_RESPONSE)
+
+    assert cache.get(scope_key=SCOPE, prompt_text=STORED_PROMPT) is not None
+    assert reports == []
+
+
 def test_gptcache_debug_logging_is_suppressed() -> None:
     from gptcache.utils.log import gptcache_log
 

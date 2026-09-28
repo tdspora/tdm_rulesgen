@@ -285,6 +285,11 @@ class JsonVectorDataManager(DataManager):
     def delete_session(self, session_id: str) -> None:
         del session_id
 
+    def report_cache(self, *args: Any, **kwargs: Any) -> None:
+        # GPTCache reports every hit with the raw prompt text. Record nothing,
+        # whatever the base class would do.
+        del args, kwargs
+
     def close(self) -> None:
         self.flush()
 
