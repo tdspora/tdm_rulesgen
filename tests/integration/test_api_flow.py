@@ -24,6 +24,19 @@ def test_health_endpoints(client) -> None:
     assert ready_response.json()["status"] == "ready"
 
 
+def test_api_key_authentication_flow(auth_client) -> None:
+    request = {"expression": 'col("salary")', "target_column": "salary_copy"}
+
+    accepted = auth_client.post("/rules/compile", json=request, headers={"X-API-Key": "secret-key"})
+    wrong_key = auth_client.post("/rules/compile", json=request, headers={"X-API-Key": "change-me"})
+    missing_key = auth_client.post("/rules/compile", json=request)
+
+    assert accepted.status_code == 200
+    assert accepted.json()["target_column"] == "salary_copy"
+    assert wrong_key.status_code == 401
+    assert missing_key.status_code == 401
+
+
 def test_rules_and_jobs_flow(client) -> None:
     parse_response = client.post(
         "/rules/parse",

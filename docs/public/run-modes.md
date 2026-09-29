@@ -98,6 +98,16 @@ uv run uvicorn rulesgen.main:app --reload
 If you want real natural-language translation, configure the LLM gateway and
 provider credentials as described in [Configuration](configuration.md).
 
+## Published Ports
+
+The Compose files publish the API on `127.0.0.1:8000` and the OpenSandbox
+server on `127.0.0.1:8090`, so both are reachable only from the Docker host.
+The API container reaches the OpenSandbox server over the Compose network.
+The OpenSandbox server starts containers through the Docker socket, so keep
+its port off other interfaces. To reach the API from other machines, turn on
+authentication first, then publish the API port on another interface in a
+Compose override file.
+
 ## Choosing a Mode
 
 Use Docker Compose with OpenSandbox when you want the closest local match to

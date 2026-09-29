@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
 import pytest
 from pydantic import ValidationError
 
+from rulesgen.auth.models import AuthContext
 from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.container import build_container, build_guardrail_scanner
 from rulesgen.core.config import Settings
+from rulesgen.errors import Unauthorized
 from rulesgen.infra.guardrails import (
     HeuristicGuardrailScanner,
     HttpGuardrailScanner,
@@ -130,6 +135,42 @@ def test_build_container_wires_dsl_max_value_length(tmp_path) -> None:
     sandbox_adapter = container.generation_service.sandbox_adapter
     assert getattr(sandbox_adapter, "max_value_length", None) == 4096
     assert getattr(sandbox_adapter, "max_memory_mb", None) == 2048
+
+
+@pytest.mark.parametrize("api_key", ["change-me", ""])
+def test_build_container_rejects_placeholder_api_keys(tmp_path, caplog, api_key: str) -> None:
+    with caplog.at_level(logging.WARNING, logger="rulesgen.container"):
+        container = _container_with_auth(tmp_path, api_key=api_key)
+
+    assert "every request that needs an API key is rejected" in caplog.text
+    for provided_key in ("change-me", "", None):
+        with pytest.raises(Unauthorized):
+            asyncio.run(container.auth_resolver.authenticate(AuthContext(api_key=provided_key)))
+
+
+def test_build_container_accepts_a_configured_api_key(tmp_path, caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="rulesgen.container"):
+        container = _container_with_auth(tmp_path, api_key="s3cret-key")
+
+    assert "API key" not in caplog.text
+    principal = asyncio.run(container.auth_resolver.authenticate(AuthContext(api_key="s3cret-key")))
+    assert principal.auth_type == "api_key"
+
+
+def _container_with_auth(tmp_path, *, api_key: str):
+    return build_container(
+        Settings(
+            rules_repository_dir=tmp_path / "rules",
+            jobs_repository_dir=tmp_path / "jobs",
+            artifacts_repository_dir=tmp_path / "artifacts",
+            uploads_repository_dir=tmp_path / "uploads",
+            audits_repository_dir=tmp_path / "audits",
+            ossfs_root_dir=tmp_path / "ossfs",
+            llm_semantic_cache_dir=tmp_path / "cache",
+            auth_enabled=True,
+            api_key=api_key,
+        )
+    )
 
 
 def test_settings_sandbox_max_memory_mb_defaults_and_validation(monkeypatch) -> None:

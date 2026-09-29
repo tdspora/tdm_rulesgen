@@ -44,3 +44,11 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 def auth_client(tmp_path: Path) -> Iterator[TestClient]:
     with build_client(auth_enabled=True, data_dir=tmp_path / "auth-client") as test_client:
         yield test_client
+
+
+@pytest.fixture
+def placeholder_key_auth_client(tmp_path: Path) -> Iterator[TestClient]:
+    with build_client(
+        auth_enabled=True, api_key="change-me", data_dir=tmp_path / "placeholder-key-client"
+    ) as test_client:
+        yield test_client

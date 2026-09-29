@@ -32,7 +32,9 @@ Authentication is disabled by default for local evaluation:
 - `RULESGEN_API_KEY=change-me`
 
 When `RULESGEN_AUTH_ENABLED=true`, callers provide the API key through the
-`X-API-Key` header.
+`X-API-Key` header. Set `RULESGEN_API_KEY` to a secret value first. While it
+is empty or `change-me`, the API rejects every request that needs a key and
+logs a warning at startup. Keys are compared in constant time.
 
 HTTP edge settings:
 

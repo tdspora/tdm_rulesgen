@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from rulesgen.auth.backends.api_key import ApiKeyBackend
+from rulesgen.auth.backends.api_key import ApiKeyBackend, is_usable_api_key
 from rulesgen.auth.backends.no_auth import NoAuthBackend
 from rulesgen.auth.base import AuthBackend
 from rulesgen.auth.resolver import AuthResolver
@@ -45,6 +46,8 @@ from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
 from rulesgen.services.rules_service import RulesService
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_LITELLM_GATEWAY_URL = "https://api.openai.com/v1"
 _LLM_PROVIDER_CREDENTIAL_ENV_VARS = (
@@ -318,6 +321,11 @@ def build_container(settings: Settings | None = None) -> AppContainer:
 
     backends: list[AuthBackend]
     if resolved_settings.auth_enabled:
+        if not is_usable_api_key(resolved_settings.api_key):
+            logger.warning(
+                "RULESGEN_AUTH_ENABLED is true, but RULESGEN_API_KEY is empty or the "
+                "change-me placeholder, so every request that needs an API key is rejected."
+            )
         backends = [ApiKeyBackend(resolved_settings.api_key)]
     else:
         backends = [NoAuthBackend()]
