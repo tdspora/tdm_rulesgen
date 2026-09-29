@@ -100,13 +100,22 @@ provider credentials as described in [Configuration](configuration.md).
 
 ## Published Ports
 
-The Compose files publish the API on `127.0.0.1:8000` and the OpenSandbox
-server on `127.0.0.1:8090`, so both are reachable only from the Docker host.
-The API container reaches the OpenSandbox server over the Compose network.
-The OpenSandbox server starts containers through the Docker socket, so keep
-its port off other interfaces. To reach the API from other machines, turn on
-authentication first, then publish the API port on another interface in a
-Compose override file.
+The Compose files bind the API port (8000) and the OpenSandbox service port
+(8090) to the Docker host's loopback address, `127.0.0.1`. The API container
+reaches the OpenSandbox service over the Compose network. The OpenSandbox
+service starts containers through the Docker socket, so keep its port off
+other interfaces. On Docker Desktop, containers can still reach both ports
+through `host.docker.internal`. Sandbox containers that the OpenSandbox
+service starts publish their own ports, which OpenSandbox chooses; the Compose
+files do not control them.
+
+To reach the API from other machines, use a Compose override file that sets
+`RULESGEN_AUTH_ENABLED` to `true`, passes `RULESGEN_API_KEY` from the shell,
+adds the host name to `RULESGEN_TRUSTED_HOSTS`, and publishes port 8000 on
+that interface's address. Exporting these variables in the shell is not
+enough: `compose.yaml` sets `RULESGEN_AUTH_ENABLED` and
+`RULESGEN_TRUSTED_HOSTS` itself and does not pass `RULESGEN_API_KEY` to the
+container. The API serves plain HTTP, so put TLS in front of it.
 
 ## Choosing a Mode
 

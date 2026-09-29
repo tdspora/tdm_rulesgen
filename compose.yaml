@@ -4,7 +4,7 @@ services:
       context: .
     image: rulesgen:local
     ports:
-      # Published on the Docker host only. Enable authentication before exposing it.
+      # Loopback only. See "Published Ports" in docs/public/run-modes.md before exposing it.
       - "127.0.0.1:8000:8000"
     environment:
       RULESGEN_ENV: local
