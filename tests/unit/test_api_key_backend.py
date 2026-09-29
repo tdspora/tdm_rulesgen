@@ -5,8 +5,9 @@ import asyncio
 import pytest
 
 from rulesgen.auth.backends import api_key as api_key_module
-from rulesgen.auth.backends.api_key import ApiKeyBackend, is_usable_api_key
+from rulesgen.auth.backends.api_key import PLACEHOLDER_API_KEY, ApiKeyBackend, is_usable_api_key
 from rulesgen.auth.models import AuthContext, Principal
+from rulesgen.core.config import Settings
 
 
 def _authenticate(configured_key: str, provided_key: str | None) -> Principal | None:
@@ -27,8 +28,8 @@ def test_other_keys_are_rejected(provided_key: str | None) -> None:
     assert _authenticate("s3cret-key", provided_key) is None
 
 
-@pytest.mark.parametrize("configured_key", ["change-me", ""])
-@pytest.mark.parametrize("provided_key", [None, "", "change-me"])
+@pytest.mark.parametrize("configured_key", ["change-me", "", "change-me ", "Change-Me"])
+@pytest.mark.parametrize("provided_key", [None, "", "change-me", "change-me ", "Change-Me"])
 def test_placeholder_or_empty_configured_key_accepts_nothing(
     configured_key: str, provided_key: str | None
 ) -> None:
@@ -37,10 +38,24 @@ def test_placeholder_or_empty_configured_key_accepts_nothing(
 
 @pytest.mark.parametrize(
     ("api_key", "usable"),
-    [("change-me", False), ("", False), ("Change-Me", True), ("s3cret-key", True)],
+    [
+        ("change-me", False),
+        ("", False),
+        ("   ", False),
+        ("change-me\n", False),
+        (" CHANGE-ME ", False),
+        ("change-me-now", True),
+        ("s3cret-key", True),
+    ],
 )
 def test_is_usable_api_key(api_key: str, usable: bool) -> None:
     assert is_usable_api_key(api_key) is usable
+
+
+def test_placeholder_matches_the_settings_default() -> None:
+    # If the documented default ever changes, the old placeholder must not turn
+    # into a working, publicly known key.
+    assert Settings.model_fields["api_key"].default == PLACEHOLDER_API_KEY
 
 
 def test_keys_are_compared_in_constant_time(monkeypatch: pytest.MonkeyPatch) -> None:

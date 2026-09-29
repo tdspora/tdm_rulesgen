@@ -12,10 +12,12 @@ PLACEHOLDER_API_KEY: Final = "change-me"
 def is_usable_api_key(api_key: str) -> bool:
     """Return whether a configured API key may authenticate callers.
 
-    An empty key and the documented placeholder are public knowledge, so a
-    backend configured with either accepts no key at all.
+    A blank key and the documented placeholder are public knowledge, so a
+    backend configured with either accepts no key at all. Surrounding
+    whitespace and letter case are ignored, so ``"Change-Me "`` counts as the
+    placeholder too.
     """
-    return api_key not in ("", PLACEHOLDER_API_KEY)
+    return api_key.strip().casefold() not in ("", PLACEHOLDER_API_KEY)
 
 
 class ApiKeyBackend:

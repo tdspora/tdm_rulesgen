@@ -29,12 +29,15 @@ Core service settings:
 Authentication is disabled by default for local evaluation:
 
 - `RULESGEN_AUTH_ENABLED=false`
-- `RULESGEN_API_KEY=change-me`
+- `RULESGEN_API_KEY=change-me`, a placeholder that never authenticates a caller
 
 When `RULESGEN_AUTH_ENABLED=true`, callers provide the API key through the
-`X-API-Key` header. Set `RULESGEN_API_KEY` to a secret value first. While it
-is empty or `change-me`, the API rejects every request that needs a key and
-logs a warning at startup. Keys are compared in constant time.
+`X-API-Key` header. Before you enable authentication, set `RULESGEN_API_KEY`
+to a secret value. If the key is blank or `change-me`, ignoring case and
+surrounding whitespace, the API logs a warning at startup and rejects every
+rules, datasets, and jobs request with `401`.
+Health checks and the OpenAPI pages need no key. Keys are compared in
+constant time.
 
 HTTP edge settings:
 
