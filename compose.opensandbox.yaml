@@ -30,7 +30,9 @@ services:
   opensandbox-server:
     image: opensandbox/server:latest
     ports:
-      - "8090:8090"
+      # Loopback only: this service starts containers through the Docker socket.
+      # The API container reaches it over the Compose network.
+      - "127.0.0.1:8090:8090"
     environment:
       SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
     volumes:

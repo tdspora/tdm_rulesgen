@@ -20,7 +20,7 @@ Accepted syntax is the subset admitted by [DSLValidator](../src/rulesgen/compile
 
 - Literals through `ast.Constant`.
 - Calls to whitelisted runtime helpers only.
-- Arithmetic operators: addition, subtraction, multiplication, division, and modulo.
+- Arithmetic operators: addition, subtraction, multiplication, division, and modulo. `%` is numeric modulo only; string `%`-formatting is rejected at runtime (use `concat(...)`).
 - Boolean operators: `and`, `or`, and `not`.
 - Comparisons: equality, inequality, less-than, less-than-or-equal, greater-than, and greater-than-or-equal.
 - Conditional expressions using Python's expression form.
@@ -29,6 +29,15 @@ Accepted syntax is the subset admitted by [DSLValidator](../src/rulesgen/compile
 - Keyword arguments only where a helper accepts them.
 
 The parser enforces `RULESGEN_DSL_MAX_LENGTH`, currently defaulting to 2000 characters. The validator enforces `RULESGEN_DSL_MAX_DEPTH` and `RULESGEN_DSL_MAX_NODES`, currently defaulting to 12 and 128. These limits are configured in [config.py](../src/rulesgen/core/config.py).
+
+## Runtime Limits
+
+The syntax limits above do not bound what a short expression produces when it runs, so evaluation is bounded separately (see [limits.py](../src/rulesgen/compiler/limits.py)):
+
+- `RULESGEN_DSL_MAX_VALUE_LENGTH`, currently defaulting to 1,048,576, caps every value an expression produces: the results of `+` and `*` on strings, lists, and tuples, list and tuple literals, the results of `concat`, `lower`, `upper`, `pattern`, `regex`, and `faker`, and the final rule result. Sizes follow the printed form of a value. Text counts one unit per character, numbers count their digits, and other values count the length of their printed form. A list or tuple counts one unit plus, for each element, the element's size and one separator unit, so repeated references count every time they appear.
+- `+` and `*` on strings, lists, and tuples, `*` on integers, list and tuple literals, `concat(...)`, `lower(...)`, and `upper(...)` are checked before the value is built or printed. A product of integers is rejected when its factors together have more digits than the limit. The other helper results and the final rule result are checked right after they are produced. Lists and tuples built by an expression carry their measured size, so later operators do not measure them again.
+- `regex(...)` accepts at most 256 digits. Larger counts are rejected at compile time with `dsl_validation_failed` and the `dsl_regex_too_long` diagnostic.
+- An exceeded limit fails preview with a `validation_failed` error. A dataset generation job finishes with status `failed` and the reason in its `error` field.
 
 ## Runtime Helper Whitelist
 
@@ -44,7 +53,7 @@ Implemented row-phase helpers:
 - `optional(probability, value)`: return null with a seeded random probability, otherwise return the value.
 - `randint(start, end)`: seeded random integer.
 - `choice(sequence, weights=None)`: seeded random selection, with optional weights.
-- `faker(provider)`: call a provider on a seeded Faker instance.
+- `faker(provider)`: call a provider on a seeded Faker instance. `provider` must be a lower-case public provider name such as `"name"`, and the binary providers `binary`, `image`, `json_bytes`, `tar`, and `zip` are rejected at compile time. The runtime only calls methods of Faker provider classes, so other Faker attributes with provider-like names, such as `seed_instance`, pass the validator but fail when the rule runs.
 - `pattern(fmt)`: generate simple pattern strings using `A`, `a`, and `#`.
 - `regex(value)`: generate only simple anchored prefix-plus-digits patterns.
 - `fk(reference)`: select from a provided reference value pool.
@@ -65,6 +74,8 @@ The validator rejects:
 - Calls whose target is not a simple `ast.Name`.
 - Unknown helper names.
 - `col(...)`, `faker(...)`, `fk(...)`, `pattern(...)`, and `regex(...)` calls without the required string literal argument shape.
+- `regex(...)` patterns that request more than 256 digits.
+- `faker(...)` names that are not lower-case public identifiers, or that name a blocked binary provider (`dsl_unsupported_faker_provider`).
 - Keyword unpacking.
 - More than one aggregate helper in one DSL expression.
 - `group_sum(...)` unless it uses exactly `key=...` and `value=...`.
@@ -78,7 +89,7 @@ Compilation is implemented by [RuleCompilerService.compile](../src/rulesgen/comp
 
 1. Parses the expression.
 2. Validates it with `DSLValidator`.
-3. Compiles the validated AST with Python's `compile(..., mode="eval")`.
+3. Rewrites the arithmetic operators and list and tuple literals of a copy of the validated AST into calls to internal checked helpers that enforce the runtime limits, then compiles it with Python's `compile(..., mode="eval")` through `compile_validated_expression` in [runtime_spec.py](../src/rulesgen/compiler/runtime_spec.py). The helper names are not callable from DSL input because the validator rejects them like any other unknown helper.
 4. Produces a `CompiledRule` with:
    - `artifact_id`
    - `target_column`

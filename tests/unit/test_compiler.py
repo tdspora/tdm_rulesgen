@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+import time
+
 import pytest
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH, MAX_REGEX_DIGITS
+from rulesgen.compiler.runtime_spec import CHECKED_BINOP_HELPER
 from rulesgen.compiler.service import RuleCompilerService
 from rulesgen.core.config import Settings
 from rulesgen.domain.models import (
@@ -12,7 +17,7 @@ from rulesgen.domain.models import (
     SchemaColumnDefinition,
     SourceType,
 )
-from rulesgen.errors import DSLValidationFailed, GuardrailBlocked
+from rulesgen.errors import DSLValidationFailed, GuardrailBlocked, ValidationFailed
 from rulesgen.execution.local import LocalExecutionAdapter
 from rulesgen.infra.guardrails import GuardrailScanner, HeuristicGuardrailScanner
 from rulesgen.infra.llm_gateway import StubLLMGatewayClient
@@ -182,3 +187,217 @@ def test_natural_language_parse_retries_invalid_dsl_candidates() -> None:
     assert frame.metrics is not None
     assert frame.metrics.attempts == 2
     assert len(frame.prompt_audits) == 2
+
+
+def _error_codes(exc: DSLValidationFailed) -> list[str]:
+    return [str(item["code"]) for item in exc.errors or []]
+
+
+def test_compiler_accepts_regex_digit_count_at_limit() -> None:
+    compiler = build_compiler()
+
+    compiled = compiler.compile(
+        expression=f'regex("^EMP[0-9]{{{MAX_REGEX_DIGITS}}}$")', target_column="employee_id"
+    )
+    preview = LocalExecutionAdapter().execute(compiled, seed=3)
+
+    assert preview.value.startswith("EMP")
+    assert len(preview.value) == len("EMP") + MAX_REGEX_DIGITS
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        f'regex("^EMP[0-9]{{{MAX_REGEX_DIGITS + 1}}}$")',
+        'regex("^A[0-9]{999999999}$")',
+        'regex("^A[0-9]{0000000000000000000000999999999}$")',
+    ],
+)
+def test_compiler_rejects_regex_digit_count_above_limit(expression: str) -> None:
+    compiler = build_compiler()
+
+    with pytest.raises(DSLValidationFailed) as exc_info:
+        compiler.compile(expression=expression, target_column="employee_id")
+
+    assert _error_codes(exc_info.value) == ["dsl_regex_too_long"]
+
+
+def test_compiler_still_defers_unsupported_regex_shapes_to_runtime() -> None:
+    compiler = build_compiler()
+
+    compiled = compiler.compile(expression='regex("[a-z]+")', target_column="code")
+
+    with pytest.raises(ValidationFailed, match="regex patterns are supported"):
+        LocalExecutionAdapter().execute(compiled)
+
+
+def test_compiled_rule_routes_arithmetic_through_checked_operator() -> None:
+    compiler = build_compiler()
+
+    compiled = compiler.compile(expression='col("salary") * 2 + 1', target_column="bonus")
+
+    assert compiled.normalized_expression == "col('salary') * 2 + 1"
+    assert CHECKED_BINOP_HELPER in compiled.code_object.co_names
+    preview = LocalExecutionAdapter().execute(compiled, row={"salary": 10})
+    assert preview.value == 21
+
+
+def test_checked_operator_helper_is_not_callable_from_dsl() -> None:
+    compiler = build_compiler()
+
+    with pytest.raises(DSLValidationFailed) as exc_info:
+        compiler.compile(expression=f'{CHECKED_BINOP_HELPER}("Mult", "a", 9)', target_column="x")
+
+    assert _error_codes(exc_info.value) == ["dsl_unknown_function"]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        '"a" * 800000000',
+        '800000000 * "a"',
+        "[0] * 200000000",
+        '["a" * 1000000] * 1000',
+        '("a" * 600000) + ("a" * 600000)',
+        'concat("a" * 600000, "a" * 600000)',
+    ],
+)
+def test_preview_rejects_values_above_default_limit(expression: str) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=expression, target_column="x")
+
+    with pytest.raises(ValidationFailed, match=f"limit of {DEFAULT_MAX_VALUE_LENGTH} units"):
+        LocalExecutionAdapter().execute(compiled)
+
+
+@pytest.mark.parametrize(
+    ("expression", "row"),
+    [
+        ('"ab" * 6', {}),
+        ('lower("ABCDEFGHIJK")', {}),
+        ('upper("abcdefghijk")', {}),
+        ('concat("abcdef", "ghijk")', {}),
+        ('pattern("AAAAAAAAAAA")', {}),
+        ('regex("^ABCDEFGHIJ[0-9]{1}$")', {}),
+        ('col("text")', {"text": "abcdefghijk"}),
+        ('[col("text"), col("text")]', {"text": "abcdef"}),
+    ],
+)
+def test_preview_enforces_configured_value_limit(expression: str, row: dict[str, str]) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=expression, target_column="x")
+
+    with pytest.raises(ValidationFailed, match="limit of 10 units"):
+        LocalExecutionAdapter(max_value_length=10).execute(compiled, row=row)
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ('"ab" * 5', "ababababab"),
+        ('"" * 1000000', ""),
+        ("[] * 1000000", []),
+        ("[1, 2] * 2", [1, 2, 1, 2]),
+        ('concat("abc", "de")', "abcde"),
+        ("17 % 5", 2),
+        ("7.5 % 2", 1.5),
+        ("10 - 4 / 2", 8.0),
+    ],
+)
+def test_preview_keeps_bounded_operator_semantics(expression: str, expected: object) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=expression, target_column="x")
+
+    preview = LocalExecutionAdapter(max_value_length=10).execute(compiled)
+
+    assert preview.value == expected
+
+
+def test_preview_rejects_string_percent_formatting() -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression='"%0800000000d" % 1', target_column="x")
+
+    with pytest.raises(ValidationFailed, match="numeric modulo only"):
+        LocalExecutionAdapter().execute(compiled)
+
+
+@pytest.mark.parametrize("provider", ["name", "email", "random_int", "company"])
+def test_compiler_accepts_public_faker_providers(provider: str) -> None:
+    compiler = build_compiler()
+
+    compiled = compiler.compile(expression=f'faker("{provider}")', target_column="value")
+    preview = LocalExecutionAdapter().execute(compiled, seed=4)
+
+    assert preview.value is not None
+
+
+@pytest.mark.parametrize(
+    "provider",
+    ["__class__", "_Faker__config", "Name", "", "seed-instance", "binary", "zip", "json_bytes"],
+)
+def test_compiler_rejects_non_public_or_binary_faker_providers(provider: str) -> None:
+    compiler = build_compiler()
+
+    with pytest.raises(DSLValidationFailed) as exc_info:
+        compiler.compile(expression=f'faker("{provider}")', target_column="value")
+
+    assert _error_codes(exc_info.value) == ["dsl_unsupported_faker_provider"]
+
+
+@pytest.mark.parametrize(
+    "provider", ["seed_instance", "add_provider", "get_providers", "random", "seed", "missing"]
+)
+def test_preview_rejects_faker_attributes_that_are_not_provider_methods(provider: str) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=f'faker("{provider}")', target_column="value")
+
+    with pytest.raises(ValidationFailed, match="Unsupported Faker provider"):
+        LocalExecutionAdapter().execute(compiled)
+
+
+@pytest.mark.parametrize(
+    ("expression", "row"),
+    [
+        ('[col("n")] * 1048575', {"n": 10**4000}),
+        (f"lower([{'1' * 1950}] * 1048575)", {}),
+        ('lower(col("items"))', {"items": [10**4000] * 300}),
+        ('concat(col("items"))', {"items": [10**4000] * 300}),
+    ],
+)
+def test_preview_sizes_numbers_by_their_digits(expression: str, row: dict[str, object]) -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression=expression, target_column="x")
+
+    with pytest.raises(ValidationFailed, match=f"limit of {DEFAULT_MAX_VALUE_LENGTH} units"):
+        LocalExecutionAdapter().execute(compiled, row=row)
+
+
+def test_preview_rejects_large_scalar_results_under_a_small_limit() -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression='col("n")', target_column="x")
+
+    with pytest.raises(ValidationFailed, match="limit of 100 units"):
+        LocalExecutionAdapter(max_value_length=100).execute(compiled, row={"n": 10**200})
+
+
+def test_preview_checks_integer_products_before_computing_them() -> None:
+    compiler = build_compiler()
+    compiled = compiler.compile(expression='col("n") * col("n") * col("n")', target_column="x")
+    adapter = LocalExecutionAdapter(max_value_length=10_000)
+
+    with pytest.raises(ValidationFailed, match="Multiplication result exceeds .* 10000 units"):
+        adapter.execute(compiled, row={"n": 10**4000})
+    assert adapter.execute(compiled, row={"n": 10**3000}).value == 10**9000
+
+
+def test_repeated_operators_on_large_results_stay_fast() -> None:
+    compiler = build_compiler()
+    operand = "([[]] * 349525 * 1 * 1 * 1)"
+    compiled = compiler.compile(expression=" and ".join([operand] * 6), target_column="x")
+
+    started_at = time.perf_counter()
+    preview = LocalExecutionAdapter().execute(compiled)
+
+    assert time.perf_counter() - started_at < 2.0
+    assert len(preview.value) == 349525
+    assert json.loads(json.dumps(preview.value[:2])) == [[], []]

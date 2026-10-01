@@ -4,6 +4,7 @@ import json
 from uuid import uuid4
 
 from rulesgen.compiler.parser import parse_expression
+from rulesgen.compiler.runtime_spec import compile_validated_expression
 from rulesgen.compiler.types import ValidatedExpression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.core.config import Settings
@@ -227,7 +228,7 @@ class RuleCompilerService:
         explainability_trace: ExplainabilityTrace | None = None,
     ) -> CompiledRule:
         validated = self._parse_validated(expression)
-        code_object = compile(validated.tree, filename="<rulesgen-dsl>", mode="eval")
+        code_object = compile_validated_expression(validated.tree)
         trace = explainability_trace
         if trace is not None:
             trace = ExplainabilityTrace(

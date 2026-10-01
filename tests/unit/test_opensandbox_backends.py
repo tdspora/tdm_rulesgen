@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,7 +19,10 @@ from rulesgen.domain.models import SchemaColumnDefinition, SchemaColumnSource
 from rulesgen.domain.uploads import DatasetInputFormat, DatasetInputOrigin, DatasetInputSource
 from rulesgen.errors import ValidationFailed
 from rulesgen.execution.alibaba_opensandbox import AlibabaOpenSandboxExecutionAdapter
-from rulesgen.execution.opensandbox import SubprocessSandboxExecutionAdapter
+from rulesgen.execution.opensandbox import (
+    SubprocessSandboxExecutionAdapter,
+    build_runner_environment,
+)
 from rulesgen.infra.llm_gateway import StubLLMGatewayClient
 from rulesgen.infra.ossfs import LocalOssfsStore
 from rulesgen.infra.repositories.in_memory import (
@@ -242,6 +248,8 @@ def test_alibaba_opensandbox_adapter_downloads_outputs_and_persists_artifacts(
     assert any(path.endswith("/sandbox_manifest.json") for path in files.written_files)
     manifest_payload = json.loads(files.written_files[f"{remote_job_dir}/sandbox_manifest.json"])
     assert manifest_payload["output_rows_path"] == remote_output_path
+    assert manifest_payload["compiler_limits"]["max_value_length"] == 1_048_576
+    assert manifest_payload["resource_limits"] == {"max_memory_mb": 0}
     assert sandbox.kill_called is True
     assert sandbox.close_called is True
     assert len(artifact_repository.list_for_job(job_id)) == 5
@@ -365,3 +373,98 @@ def test_alibaba_opensandbox_adapter_rewrites_local_direct_endpoint_resolution(
         socket.getaddrinfo("example.test", 443)
 
     assert requested_hosts == ["127.0.0.1", "example.test"]
+
+
+def test_build_runner_environment_withholds_credentials() -> None:
+    parent_env = {
+        "PATH": "/usr/local/bin:/usr/bin",
+        "HOME": "/home/appuser",
+        "LANG": "C.UTF-8",
+        "PYTHONPATH": "/opt/extra",
+        "OPENAI_API_KEY": "placeholder",
+        "ANTHROPIC_API_KEY": "placeholder",
+        "RULESGEN_API_KEY": "placeholder",
+        "RULESGEN_OPENSANDBOX_API_KEY": "placeholder",
+        "OSS_ACCESS_KEY_SECRET": "placeholder",
+        "DATABRICKS_TOKEN": "placeholder",
+        "LITELLM_API_KEY": "placeholder",
+    }
+
+    env = build_runner_environment(parent_env, src_dir=Path("/app/src"))
+
+    assert env == {
+        "PATH": "/usr/local/bin:/usr/bin",
+        "HOME": "/home/appuser",
+        "LANG": "C.UTF-8",
+        "PYTHONPATH": f"/app/src{os.pathsep}/opt/extra",
+        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+    }
+
+
+def test_subprocess_adapter_runs_runner_with_minimal_env_and_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "placeholder")
+    monkeypatch.setenv("RULESGEN_API_KEY", "placeholder")
+    captured: dict[str, object] = {}
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        manifest = json.loads(Path(args[3]).read_text(encoding="utf-8"))
+        captured["env"] = kwargs["env"]
+        captured["manifest"] = manifest
+        Path(manifest["output_rows_path"]).write_text(
+            json.dumps([{"salary": 10, "bonus": 20}]), encoding="utf-8"
+        )
+        Path(args[4]).write_text(
+            json.dumps(
+                {"success": True, "output_path": manifest["output_rows_path"], "row_count": 1}
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    ossfs_store = LocalOssfsStore(tmp_path / "ossfs")
+    input_path = ossfs_store.write_rows("staged-input", "rows.json", [{"salary": 10}])
+    adapter = SubprocessSandboxExecutionAdapter(
+        ossfs_store=ossfs_store,
+        artifact_repository=InMemoryArtifactRepository(),
+        sandbox_python_executable=sys.executable,
+        timeout_seconds=30.0,
+        max_length=2_000,
+        max_depth=12,
+        max_nodes=128,
+        max_value_length=4_096,
+        max_memory_mb=512,
+    )
+
+    result = adapter.execute_dataset(
+        job_id="job-env",
+        input_source=DatasetInputSource(
+            source_id="staged-input",
+            origin=DatasetInputOrigin.UPLOAD,
+            filename="rows.json",
+            media_type="application/json",
+            format=DatasetInputFormat.JSON,
+            row_count=1,
+            columns=["salary"],
+            storage_path=str(input_path),
+        ),
+        compiled_rules=[
+            build_compiler().compile(expression='col("salary") * 2', target_column="bonus")
+        ],
+        schema=[],
+        seed=7,
+        references={},
+    )
+
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert "OPENAI_API_KEY" not in env
+    assert "RULESGEN_API_KEY" not in env
+    assert env["LITELLM_LOCAL_MODEL_COST_MAP"] == "True"
+    manifest = captured["manifest"]
+    assert isinstance(manifest, dict)
+    assert manifest["resource_limits"] == {"max_memory_mb": 512}
+    assert manifest["compiler_limits"]["max_value_length"] == 4_096
+    assert result.row_count == 1

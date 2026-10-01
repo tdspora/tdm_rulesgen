@@ -3,12 +3,16 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sys
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.compiler.parser import parse_expression
+from rulesgen.compiler.runtime_spec import compile_validated_expression
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.domain.models import (
     AggregateHelperSpec,
@@ -35,6 +39,7 @@ def main(argv: list[str]) -> int:
     manifest_path = Path(argv[1])
     result_path = Path(argv[2])
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    memory_limit_applied = apply_resource_limits(payload.get("resource_limits"))
 
     try:
         compiler_limits = dict(payload["compiler_limits"])
@@ -56,12 +61,31 @@ def main(argv: list[str]) -> int:
             max_nodes=int(compiler_limits["max_nodes"]),
             schema=schema,
             now=datetime.fromisoformat(payload["now"]),
+            max_value_length=int(compiler_limits.get("max_value_length", DEFAULT_MAX_VALUE_LENGTH)),
         )
         output_rows_path = Path(payload["output_rows_path"])
         output_rows_path.write_text(
             json.dumps(run.rows, indent=2, sort_keys=True, default=str),
             encoding="utf-8",
         )
+        diagnostics = [
+            {
+                "level": item.level.value,
+                "code": item.code,
+                "message": item.message,
+                "location": item.location,
+            }
+            for item in run.diagnostics
+        ]
+        if memory_limit_applied is False:
+            diagnostics.append(
+                {
+                    "level": "warning",
+                    "code": "sandbox_memory_limit_unavailable",
+                    "message": "The dataset runner could not enforce its memory limit here.",
+                    "location": None,
+                }
+            )
         result_payload = {
             "success": True,
             "output_path": str(output_rows_path),
@@ -69,15 +93,12 @@ def main(argv: list[str]) -> int:
             "column_sources": {name: source.value for name, source in run.column_sources.items()},
             "row_rule_order": run.row_rule_order,
             "group_rule_order": run.group_rule_order,
-            "diagnostics": [
-                {
-                    "level": item.level.value,
-                    "code": item.code,
-                    "message": item.message,
-                    "location": item.location,
-                }
-                for item in run.diagnostics
-            ],
+            "diagnostics": diagnostics,
+        }
+    except MemoryError:
+        result_payload = {
+            "success": False,
+            "error": "Dataset generation exceeded the sandbox memory limit.",
         }
     except Exception as exc:  # noqa: BLE001
         result_payload = {
@@ -90,6 +111,46 @@ def main(argv: list[str]) -> int:
         encoding="utf-8",
     )
     return 0 if result_payload["success"] else 1
+
+
+def apply_resource_limits(limits: Mapping[str, Any] | None) -> bool | None:
+    """Cap how much more address space this runner process may allocate.
+
+    ``limits["max_memory_mb"]`` is a budget on top of the runner's footprint
+    after imports, enforced with ``RLIMIT_AS`` so an oversized allocation raises
+    ``MemoryError`` instead of exhausting the host. Returns ``None`` when no limit
+    is requested, ``True`` when it is applied, and ``False`` when the platform
+    cannot enforce it (for example without ``/proc`` or the ``resource`` module).
+    """
+    if not limits:
+        return None
+    max_memory_mb = int(limits.get("max_memory_mb") or 0)
+    if max_memory_mb <= 0:
+        return None
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - non-POSIX platforms
+        return False
+    footprint = _address_space_bytes()
+    if footprint is None:
+        return False
+    budget = footprint + max_memory_mb * 1024 * 1024
+    _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+    if hard_limit != resource.RLIM_INFINITY:
+        budget = min(budget, hard_limit)
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (budget, hard_limit))
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _address_space_bytes() -> int | None:
+    try:
+        size_in_pages = Path("/proc/self/statm").read_text(encoding="ascii").split()[0]
+        return int(size_in_pages) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError, AttributeError):
+        return None
 
 
 def _load_rows(
@@ -192,7 +253,7 @@ def _deserialize_compiled_rule(
         helper_phases=validated.helper_phases,
         aggregate_helper=_deserialize_aggregate_helper(payload.get("aggregate_helper")),
         source_type=SourceType(payload.get("source_type", SourceType.DSL.value)),
-        code_object=compile(validated.tree, filename="<rulesgen-dsl>", mode="eval"),
+        code_object=compile_validated_expression(validated.tree),
         dsl_version=str(payload.get("dsl_version", "v1")),
         explainability_trace=_deserialize_trace(payload.get("explainability_trace")),
         created_at=datetime.fromisoformat(payload["created_at"]),

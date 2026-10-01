@@ -62,8 +62,10 @@ def preview_rule(
     row: dict[str, Any] | None = None,
     seed: int = 0,
     references: dict[str, list[Any]] | None = None,
+    settings: Settings | None = None,
 ) -> ExecutionPreview:
-    return LocalExecutionAdapter().execute(
+    resolved_settings = settings or Settings()
+    return LocalExecutionAdapter(max_value_length=resolved_settings.dsl_max_value_length).execute(
         compiled_rule,
         row=row,
         seed=seed,

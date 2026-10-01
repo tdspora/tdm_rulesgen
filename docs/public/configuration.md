@@ -29,10 +29,15 @@ Core service settings:
 Authentication is disabled by default for local evaluation:
 
 - `RULESGEN_AUTH_ENABLED=false`
-- `RULESGEN_API_KEY=change-me`
+- `RULESGEN_API_KEY=change-me`, a placeholder that never authenticates a caller
 
 When `RULESGEN_AUTH_ENABLED=true`, callers provide the API key through the
-`X-API-Key` header.
+`X-API-Key` header. Before you enable authentication, set `RULESGEN_API_KEY`
+to a secret value. If the key is blank or `change-me`, ignoring case and
+surrounding whitespace, the API logs a warning at startup and rejects every
+rules, datasets, and jobs request with `401`.
+Health checks and the OpenAPI pages need no key. Keys are compared in
+constant time.
 
 HTTP edge settings:
 
@@ -50,6 +55,25 @@ The compiler validates DSL expressions against size and depth limits:
 - `RULESGEN_DSL_MAX_NODES`
 
 These limits protect parser and validator behavior for untrusted rule input.
+
+Evaluation is bounded separately by `RULESGEN_DSL_MAX_VALUE_LENGTH` (default
+`1048576`). No value a rule produces during preview or dataset generation may
+be larger than this: operator results, helper results such as `concat(...)`,
+and the final rule result. Sizes follow the printed form of a value: text
+counts one unit per character, numbers count their digits, other values count
+the length of their printed form, and a list or tuple counts one unit plus,
+for each element, the element's size and one separator unit. `+` and `*` on
+text, lists, and tuples, `*` on integers, list and tuple literals,
+`concat(...)`, `lower(...)`, and `upper(...)` are checked before the value is
+built or printed; other results are checked right after they are produced. A
+product of integers is rejected when its factors together have more digits
+than the limit.
+
+When a limit is exceeded, a preview request fails with a `validation_failed`
+Problem Details response, and a dataset generation job finishes with status
+`failed` and the reason in `error`. `regex(...)` accepts at most 256 digits;
+larger counts fail at compile time with `dsl_validation_failed` and the
+`dsl_regex_too_long` diagnostic.
 
 ## Local Storage
 
@@ -69,6 +93,13 @@ Storage settings:
 
 The default local output tree is under `.rulesgen-data/`.
 
+In the Docker image, the entrypoint starts as root, creates these directories,
+and gives them to the unprivileged `appuser` before it starts the API. It
+skips a directory whose path resolves through a symbolic link and prints a
+warning, and it does not change the owner of hard-linked files. Mount volumes
+directly at the configured paths, or set the paths to their resolved
+locations.
+
 ## Execution Backend
 
 Dataset generation uses `RULESGEN_SANDBOX_BACKEND`:
@@ -82,6 +113,24 @@ Shared sandbox settings:
 - `RULESGEN_SANDBOX_WORKSPACE_DIR`
 - `RULESGEN_SANDBOX_TIMEOUT_SECONDS`
 - `RULESGEN_SANDBOX_PYTHON_EXECUTABLE`
+- `RULESGEN_SANDBOX_MAX_MEMORY_MB`
+
+`RULESGEN_SANDBOX_MAX_MEMORY_MB` (default `2048`) is how much additional
+address space the dataset generation process may allocate after it starts,
+with either the `subprocess` or the `opensandbox` backend. It is enforced on
+Linux. On other platforms the job runs without it and reports a
+`sandbox_memory_limit_unavailable` warning diagnostic. A job that exceeds the
+limit fails instead of exhausting host memory. Set it to `0` to disable the
+limit.
+
+The subprocess dataset executor starts its child process with an allowlisted
+environment: path, home, locale, time-zone, temporary-directory,
+dynamic-linker, Windows system, and Python interpreter variables. It also sets
+`LITELLM_LOCAL_MODEL_COST_MAP=True`, so the child never downloads litellm's
+model cost map. Provider keys and other credentials in the API process
+environment are not passed to the child. The child still runs as the same
+operating-system user as the API, so the subprocess dataset executor is not a
+full isolation boundary.
 
 OpenSandbox settings:
 
@@ -121,6 +170,11 @@ client. They are credential values at runtime and must never be committed.
 temperature parameter entirely. Use `RULESGEN_LLM_EXTRA_COMPLETION_PARAMS` for
 model-specific JSON options such as maximum-token or reasoning controls.
 
+The `stub` backend only matches its templates against natural-language rules
+of up to 1000 characters and reports longer rules as unsupported.
+Independently of the backend, the HTTP API rejects a rule `source_text` longer
+than 4000 characters with `request_validation_failed`.
+
 ## Databricks Gateway Settings
 
 The Databricks gateway is selected by `RULESGEN_LLM_PROVIDER=databricks`, or
@@ -149,6 +203,21 @@ Semantic-cache settings:
 
 Cache entries are scoped by prompt version, model, table, schema fingerprint,
 and requested targets.
+
+A cache hit also requires exactly the same prompt text, including whitespace.
+Embedding similarity alone never reuses another prompt's translation, because
+one word such as "higher" or "lower" can invert a rule.
+`RULESGEN_LLM_SEMANTIC_CACHE_SIMILARITY_THRESHOLD` remains an additional
+gate.
+
+Cache files store a SHA-256 digest of each prompt instead of the prompt text,
+next to the cached DSL translation and a hashed embedding of the prompt. When
+the API starts and uses the semantic cache, it rewrites cache files from
+earlier versions, which stored the prompt text, to digests. It logs a warning
+for each file it cannot read and leaves that file in place. If the API does
+not use the semantic cache, for example because it is turned off, delete the
+`RULESGEN_LLM_SEMANTIC_CACHE_DIR` directory to remove prompt text that earlier
+versions stored.
 
 ## Guardrails
 

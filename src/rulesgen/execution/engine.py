@@ -5,8 +5,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from rulesgen.compiler.limits import DEFAULT_MAX_VALUE_LENGTH
 from rulesgen.compiler.parser import parse_expression
-from rulesgen.compiler.runtime_spec import RuntimeContext, build_runtime_locals
+from rulesgen.compiler.runtime_spec import (
+    RuntimeContext,
+    build_runtime_locals,
+    compile_validated_expression,
+)
 from rulesgen.compiler.validator import DSLValidator
 from rulesgen.domain.models import (
     ColumnSource,
@@ -36,6 +41,7 @@ def execute_preview_rule(
     now: datetime | None = None,
     aggregate_helper_name: str | None = None,
     aggregate_lookup: dict[Any, Any] | None = None,
+    max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
 ) -> Any:
     runtime_context = RuntimeContext(
         row=row,
@@ -44,9 +50,12 @@ def execute_preview_rule(
         now=now or datetime.now(UTC),
         aggregate_helper_name=aggregate_helper_name,
         aggregate_lookup=aggregate_lookup,
+        max_value_length=max_value_length,
     )
     locals_map = build_runtime_locals(runtime_context)
-    return eval(compiled_rule.code_object, {"__builtins__": {}}, locals_map)
+    value = eval(compiled_rule.code_object, {"__builtins__": {}}, locals_map)
+    runtime_context.sizer.ensure_within_limit(value, context="Rule result")
+    return value
 
 
 def execute_generation_plan(
@@ -60,6 +69,7 @@ def execute_generation_plan(
     max_nodes: int,
     schema: list[SchemaColumnDefinition] | None = None,
     now: datetime | None = None,
+    max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
 ) -> GenerationRun:
     anchor_now = now or datetime.now(UTC)
     execution_schema = list(schema or [])
@@ -77,11 +87,13 @@ def execute_generation_plan(
                     seed=_derive_seed(seed, rule.artifact_id, row_index),
                     references=references,
                     now=anchor_now,
+                    max_value_length=max_value_length,
                 )
             except Exception as exc:  # noqa: BLE001
                 target = rule.target_column or "<anonymous>"
+                detail = _describe_error(exc)
                 raise ValidationFailed(
-                    f"Row-phase rule {target!r} failed at row {row_index}: {exc}"
+                    f"Row-phase rule {target!r} failed at row {row_index}: {detail}"
                 ) from exc
 
     group_order = _topological_order(group_rules)
@@ -97,6 +109,7 @@ def execute_generation_plan(
             max_depth=max_depth,
             max_nodes=max_nodes,
             now=anchor_now,
+            max_value_length=max_value_length,
         )
         for row_index, row in enumerate(materialized_rows):
             try:
@@ -108,11 +121,13 @@ def execute_generation_plan(
                     now=anchor_now,
                     aggregate_helper_name=rule.aggregate_helper.helper_name,
                     aggregate_lookup=lookup,
+                    max_value_length=max_value_length,
                 )
             except Exception as exc:  # noqa: BLE001
                 target = rule.target_column or "<anonymous>"
+                detail = _describe_error(exc)
                 raise ValidationFailed(
-                    f"Group-phase rule {target!r} failed at row {row_index}: {exc}"
+                    f"Group-phase rule {target!r} failed at row {row_index}: {detail}"
                 ) from exc
 
     return GenerationRun(
@@ -188,6 +203,11 @@ def _classify_columns(
     return sources
 
 
+def _describe_error(exc: Exception) -> str:
+    # MemoryError (for example from the sandbox memory limit) has no message.
+    return str(exc) or type(exc).__name__
+
+
 def _derive_seed(base_seed: int, artifact_id: str, row_index: int) -> int:
     digest = hashlib.sha256(f"{base_seed}:{artifact_id}:{row_index}".encode()).hexdigest()
     return int(digest[:16], 16)
@@ -203,6 +223,7 @@ def _build_aggregate_lookup(
     max_depth: int,
     max_nodes: int,
     now: datetime,
+    max_value_length: int = DEFAULT_MAX_VALUE_LENGTH,
 ) -> dict[Any, Any]:
     aggregate_helper = compiled_rule.aggregate_helper
     if aggregate_helper is None:
@@ -223,6 +244,9 @@ def _build_aggregate_lookup(
             max_nodes=max_nodes,
         )
 
+    if aggregate_helper.helper_name == "group_sum" and value_code is None:
+        raise ValidationFailed("group_sum lookup is missing a value expression.")
+
     lookup: dict[Any, Any] = {}
     for row_index, row in enumerate(rows):
         context = RuntimeContext(
@@ -230,22 +254,28 @@ def _build_aggregate_lookup(
             seed=_derive_seed(seed, compiled_rule.artifact_id, row_index),
             references=references,
             now=now,
+            max_value_length=max_value_length,
         )
         locals_map = build_runtime_locals(context)
-        key = eval(key_code, {"__builtins__": {}}, locals_map)
-        if key is None:
-            continue
-        if aggregate_helper.helper_name == "group_sum":
-            if value_code is None:
-                raise ValidationFailed("group_sum lookup is missing a value expression.")
-            value = eval(value_code, {"__builtins__": {}}, locals_map)
-            lookup[key] = lookup.get(key, 0) + (0 if value is None else value)
-            continue
-        lookup[key] = lookup.get(key, 0) + 1
+        try:
+            key = eval(key_code, {"__builtins__": {}}, locals_map)
+            if key is None:
+                continue
+            if aggregate_helper.helper_name == "group_sum" and value_code is not None:
+                value = eval(value_code, {"__builtins__": {}}, locals_map)
+                lookup[key] = lookup.get(key, 0) + (0 if value is None else value)
+            else:
+                lookup[key] = lookup.get(key, 0) + 1
+        except Exception as exc:  # noqa: BLE001
+            target = compiled_rule.target_column or "<anonymous>"
+            detail = _describe_error(exc)
+            raise ValidationFailed(
+                f"Aggregate helper for rule {target!r} failed at row {row_index}: {detail}"
+            ) from exc
     return lookup
 
 
 def _compile_expression(expression: str, *, max_length: int, max_depth: int, max_nodes: int) -> Any:
     tree = parse_expression(expression, max_length=max_length)
     validated = DSLValidator(max_depth=max_depth, max_nodes=max_nodes).validate(tree)
-    return compile(validated.tree, filename="<rulesgen-subexpression>", mode="eval")
+    return compile_validated_expression(validated.tree, filename="<rulesgen-subexpression>")

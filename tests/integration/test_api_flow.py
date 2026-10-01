@@ -24,6 +24,19 @@ def test_health_endpoints(client) -> None:
     assert ready_response.json()["status"] == "ready"
 
 
+def test_api_key_authentication_flow(auth_client) -> None:
+    request = {"expression": 'col("salary")', "target_column": "salary_copy"}
+
+    accepted = auth_client.post("/rules/compile", json=request, headers={"X-API-Key": "secret-key"})
+    wrong_key = auth_client.post("/rules/compile", json=request, headers={"X-API-Key": "change-me"})
+    missing_key = auth_client.post("/rules/compile", json=request)
+
+    assert accepted.status_code == 200
+    assert accepted.json()["target_column"] == "salary_copy"
+    assert wrong_key.status_code == 401
+    assert missing_key.status_code == 401
+
+
 def test_rules_and_jobs_flow(client) -> None:
     parse_response = client.post(
         "/rules/parse",
@@ -613,3 +626,44 @@ def test_parse_endpoint_allows_clean_natural_language_input(client) -> None:
 
     assert response.status_code == 200
     assert response.json()["dsl_candidate"] is not None
+
+
+def test_rule_ids_cannot_escape_the_rules_repository(client, tmp_path) -> None:
+    compile_response = client.post(
+        "/rules/compile",
+        json={"expression": 'concat("planted")', "target_column": "x"},
+    )
+    assert compile_response.status_code == 200
+    artifact_id = compile_response.json()["artifact_id"]
+    rules_dir = client.app.state.settings.rules_repository_dir
+    outside = tmp_path / "outside-rule.json"
+    outside.write_text((rules_dir / f"{artifact_id}.json").read_text(encoding="utf-8"))
+
+    for unsafe_id in (str(outside.with_suffix("")), f"../../{outside.stem}", "../rules"):
+        preview_response = client.post("/rules/preview", json={"artifact_id": unsafe_id})
+        assert preview_response.status_code == 404
+        assert preview_response.json()["code"] == "rule_not_found"
+
+    job_response = client.post(
+        "/jobs",
+        json={"kind": "execute_preview", "artifact_id": str(outside.with_suffix(""))},
+    )
+    assert job_response.status_code == 200
+    assert job_response.json()["status"] == "failed"
+    assert "Unknown artifact_id" in job_response.json()["error"]
+
+
+def test_upload_ids_cannot_escape_the_uploads_repository(client) -> None:
+    response = client.post(
+        "/datasets/generate",
+        json={
+            "file_id": "../jobs/anything",
+            "schema": [
+                {"name": "order_id", "type": "STRING", "nullable": False, "source": "syngen"}
+            ],
+            "seed": 17,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "file_not_found"

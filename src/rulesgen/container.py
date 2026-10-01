@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from rulesgen.auth.backends.api_key import ApiKeyBackend
+from rulesgen.auth.backends.api_key import ApiKeyBackend, is_usable_api_key
 from rulesgen.auth.backends.no_auth import NoAuthBackend
 from rulesgen.auth.base import AuthBackend
 from rulesgen.auth.resolver import AuthResolver
@@ -45,6 +46,8 @@ from rulesgen.services.generation_service import GenerationService
 from rulesgen.services.health_service import HealthService
 from rulesgen.services.jobs_service import JobsService
 from rulesgen.services.rules_service import RulesService
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_LITELLM_GATEWAY_URL = "https://api.openai.com/v1"
 _LLM_PROVIDER_CREDENTIAL_ENV_VARS = (
@@ -253,7 +256,9 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     job_repository = FileSystemJobRepository(resolved_settings.jobs_repository_dir)
     artifact_repository = FileSystemArtifactRepository(resolved_settings.artifacts_repository_dir)
     upload_repository = FileSystemDatasetUploadRepository(resolved_settings.uploads_repository_dir)
-    execution_adapter = LocalExecutionAdapter()
+    execution_adapter = LocalExecutionAdapter(
+        max_value_length=resolved_settings.dsl_max_value_length
+    )
     ossfs_store = LocalOssfsStore(resolved_settings.ossfs_root_dir)
     dataset_upload_service = DatasetUploadService(
         upload_repository=upload_repository,
@@ -268,6 +273,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             max_length=resolved_settings.dsl_max_length,
             max_depth=resolved_settings.dsl_max_depth,
             max_nodes=resolved_settings.dsl_max_nodes,
+            max_value_length=resolved_settings.dsl_max_value_length,
+            max_memory_mb=resolved_settings.sandbox_max_memory_mb,
             opensandbox_domain=resolved_settings.opensandbox_domain,
             opensandbox_protocol=resolved_settings.opensandbox_protocol,
             opensandbox_api_key=resolved_settings.opensandbox_api_key,
@@ -287,6 +294,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             max_length=resolved_settings.dsl_max_length,
             max_depth=resolved_settings.dsl_max_depth,
             max_nodes=resolved_settings.dsl_max_nodes,
+            max_value_length=resolved_settings.dsl_max_value_length,
+            max_memory_mb=resolved_settings.sandbox_max_memory_mb,
         )
     rules_service = RulesService(
         compiler=compiler,
@@ -312,6 +321,11 @@ def build_container(settings: Settings | None = None) -> AppContainer:
 
     backends: list[AuthBackend]
     if resolved_settings.auth_enabled:
+        if not is_usable_api_key(resolved_settings.api_key):
+            logger.warning(
+                "RULESGEN_AUTH_ENABLED is true, but RULESGEN_API_KEY is empty or the "
+                "change-me placeholder, so every request that needs an API key is rejected."
+            )
         backends = [ApiKeyBackend(resolved_settings.api_key)]
     else:
         backends = [NoAuthBackend()]

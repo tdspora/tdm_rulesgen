@@ -27,17 +27,41 @@ def _configured_directories() -> tuple[Path, ...]:
     return tuple(unique_paths)
 
 
+def _warn(message: str) -> None:
+    print(f"rulesgen-entrypoint: {message}", file=sys.stderr)
+
+
+def _resolves_through_symlink(path: Path) -> bool:
+    return Path(os.path.realpath(path)) != path
+
+
 def _chown_tree(path: Path, *, uid: int, gid: int) -> None:
-    for current_root, dir_names, file_names in os.walk(path):
-        os.chown(current_root, uid, gid)
-        for dir_name in dir_names:
-            os.chown(Path(current_root) / dir_name, uid, gid)
-        for file_name in file_names:
-            os.chown(Path(current_root) / file_name, uid, gid)
+    # Everything below the configured directory can be written by the app user,
+    # so the tree is walked with directory file descriptors and nothing in it is
+    # resolved by path: a planted symlink is changed itself and never walked.
+    # Hard-linked files are skipped, because changing one also changes the
+    # other links, which may be system files.
+    for root, dir_names, file_names, root_fd in os.fwalk(path, follow_symlinks=False):
+        os.chown(root_fd, uid, gid)
+        for name in dir_names:
+            os.chown(name, uid, gid, dir_fd=root_fd, follow_symlinks=False)
+        for name in file_names:
+            if os.stat(name, dir_fd=root_fd, follow_symlinks=False).st_nlink > 1:
+                _warn(f"not changing the owner of {Path(root) / name}: it has other hard links")
+                continue
+            os.chown(name, uid, gid, dir_fd=root_fd, follow_symlinks=False)
 
 
 def _prepare_directories(*paths: Path, uid: int, gid: int) -> None:
-    for path in paths:
+    for configured_path in paths:
+        # abspath() also removes "..", so the path that is checked is the path used.
+        path = Path(os.path.abspath(configured_path))
+        # The nested data directories sit inside a volume the app user can write
+        # to, so a symlink on the way to one may have been planted there to make
+        # root change the owner of system files.
+        if _resolves_through_symlink(path):
+            _warn(f"not preparing {path}: it resolves through a symbolic link")
+            continue
         path.mkdir(parents=True, exist_ok=True)
         _chown_tree(path, uid=uid, gid=gid)
 

@@ -19,6 +19,20 @@ def test_missing_api_key_returns_problem_details(auth_client) -> None:
     assert body["title"] == "Unauthorized"
 
 
+def test_placeholder_api_key_returns_problem_details(placeholder_key_auth_client) -> None:
+    response = placeholder_key_auth_client.post(
+        "/rules/compile",
+        json={"expression": 'col("salary")', "target_column": "salary_copy"},
+        headers={**LOCALHOST_HEADERS, "X-API-Key": "change-me"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "unauthorized"
+    assert body["title"] == "Unauthorized"
+
+
 def test_request_validation_uses_problem_details(client) -> None:
     response = client.post("/rules/compile", json={"target_column": "x"}, headers=LOCALHOST_HEADERS)
 
@@ -95,3 +109,56 @@ def test_unhandled_errors_log_traceback_with_request_context(client, caplog, mon
     assert getattr(record, "method", None) == "POST"
     assert record.exc_info is not None
     assert "RuntimeError: boom" in caplog.text
+
+
+def test_oversized_dsl_value_returns_problem_details(client) -> None:
+    response = client.post(
+        "/rules/preview",
+        json={"expression": '"a" * 800000000', "target_column": "x"},
+        headers=LOCALHOST_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "validation_failed"
+    assert "exceeds the configured limit" in body["detail"]
+
+
+def test_regex_digit_limit_returns_problem_details(client) -> None:
+    response = client.post(
+        "/rules/compile",
+        json={"expression": 'regex("^A[0-9]{999999999}$")', "target_column": "x"},
+        headers=LOCALHOST_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "dsl_validation_failed"
+    assert [item["code"] for item in body["errors"]] == ["dsl_regex_too_long"]
+
+
+def test_overlong_rule_source_text_returns_problem_details(client) -> None:
+    response = client.post(
+        "/rules/parse",
+        json={
+            "source_text": "bonus plus salary " + "a" * 4_000,
+            "source_type": "natural_language",
+            "target_column": "bonus",
+            "schema_columns": ["bonus", "salary"],
+        },
+        headers=LOCALHOST_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["code"] == "request_validation_failed"
+    assert body["errors"] == [
+        {
+            "loc": ["body", "source_text"],
+            "msg": "String should have at most 4000 characters",
+            "type": "string_too_long",
+        }
+    ]

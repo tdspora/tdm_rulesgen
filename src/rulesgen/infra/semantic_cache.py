@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import numpy as np
 
 if TYPE_CHECKING:
+    gptcache_log: logging.Logger
 
     class Cache:
         def init(self, **kwargs: Any) -> None: ...
@@ -46,6 +50,12 @@ if TYPE_CHECKING:
     class SearchDistanceEvaluation:
         def __init__(self, *, max_distance: float) -> None: ...
 
+        def evaluation(
+            self, src_dict: dict[str, Any], cache_dict: dict[str, Any], **kwargs: Any
+        ) -> float: ...
+
+        def range(self) -> tuple[float, float]: ...
+
     def get_prompt(data: Any, **kwargs: Any) -> str: ...
 
     def gptcache_get(
@@ -74,8 +84,81 @@ else:
     from gptcache.similarity_evaluation.distance import (  # type: ignore[import-untyped]
         SearchDistanceEvaluation,
     )
+    from gptcache.utils.log import gptcache_log  # type: ignore[import-untyped]
 
 from rulesgen.domain.models import CacheInsight
+
+# GPTCache logs the user prompt and the cached question at DEBUG level. Prompts
+# can carry customer data and logs must stay data-free at every level.
+gptcache_log.setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+
+QUESTION_DIGEST_FIELD: Final = "question_sha256"
+"""Cache entry field that holds the digest of the prompt the entry was stored for."""
+
+_LEGACY_QUESTION_FIELD: Final = "question"
+"""Cache entry field in which earlier versions stored the prompt text itself."""
+
+
+def prompt_digest(prompt_text: str) -> str:
+    """SHA-256 digest of the exact prompt text.
+
+    Cache entries store this digest instead of the prompt text, and a lookup only
+    hits entries whose digest equals the digest of the new prompt. The text is not
+    normalized, because whitespace inside a quoted value can change a rule.
+    """
+    return hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+
+
+def migrate_cache_files(root_dir: Path) -> None:
+    """Replace the prompt text in cache files written by earlier versions.
+
+    A file is also converted when its scope is next used, but a scope that is
+    never used again would otherwise keep its prompt text on disk. Files that
+    cannot be read are left in place and reported.
+    """
+    for path in sorted(root_dir.glob("*.json")):
+        try:
+            entries, migrated = _read_entries(path)
+        except (OSError, ValueError):
+            logger.warning("Skipped unreadable semantic-cache file %s.", path.name)
+            continue
+        if migrated:
+            _write_entries(path, entries)
+
+
+def _read_entries(path: Path) -> tuple[list[dict[str, Any]], bool]:
+    """Read a cache file and whether any entry had to be converted to a digest."""
+    if not path.exists():
+        return [], False
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        return [], False
+    entries: list[dict[str, Any]] = []
+    migrated = False
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        entry = dict(item)
+        if _LEGACY_QUESTION_FIELD in entry:
+            question = entry.pop(_LEGACY_QUESTION_FIELD)
+            entry.setdefault(QUESTION_DIGEST_FIELD, prompt_digest(str(question)))
+            migrated = True
+        entries.append(entry)
+    return entries, migrated
+
+
+def _write_entries(path: Path, entries: list[dict[str, Any]]) -> None:
+    """Replace a cache file in one step, so a failed write never leaves it truncated."""
+    handle, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(entries, stream, indent=2, sort_keys=True)
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @dataclass(slots=True)
@@ -117,11 +200,17 @@ class HashingEmbedding(BaseEmbedding):
 
 
 class JsonVectorDataManager(DataManager):
+    """JSON-file vector store that persists prompt digests, never prompt text."""
+
     def __init__(self, storage_path: Path) -> None:
         self.storage_path = storage_path
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
-        self._entries = self._load_entries()
+        self._entries, migrated = _read_entries(self.storage_path)
+        if migrated:
+            # Rewrite entries written by earlier versions so their raw prompt
+            # text does not stay on disk.
+            self.flush()
 
     def save(self, question: Any, answer: Any, embedding_data: Any, **kwargs: Any) -> None:
         del kwargs
@@ -151,7 +240,7 @@ class JsonVectorDataManager(DataManager):
                 self._entries.append(
                     {
                         "id": next_id,
-                        "question": str(question),
+                        QUESTION_DIGEST_FIELD: prompt_digest(str(question)),
                         "answer": str(answer),
                         "embedding": np.asarray(embedding, dtype=np.float32).tolist(),
                     }
@@ -165,7 +254,7 @@ class JsonVectorDataManager(DataManager):
         for entry in self._entries:
             if entry["id"] == entry_id:
                 return CacheData(
-                    question=entry["question"],
+                    question=entry[QUESTION_DIGEST_FIELD],
                     answers=entry["answer"],
                     embedding_data=np.asarray(entry["embedding"], dtype=np.float32),
                 )
@@ -196,23 +285,40 @@ class JsonVectorDataManager(DataManager):
     def delete_session(self, session_id: str) -> None:
         del session_id
 
+    def report_cache(self, *args: Any, **kwargs: Any) -> None:
+        # GPTCache reports every hit with the raw prompt text. Record nothing,
+        # whatever the base class would do.
+        del args, kwargs
+
     def close(self) -> None:
         self.flush()
 
     def flush(self) -> None:
         with self._lock:
-            self.storage_path.write_text(
-                json.dumps(self._entries, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
+            _write_entries(self.storage_path, self._entries)
 
-    def _load_entries(self) -> list[dict[str, Any]]:
-        if not self.storage_path.exists():
-            return []
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
-        if not isinstance(payload, list):
-            return []
-        return [dict(item) for item in payload if isinstance(item, dict)]
+
+class ExactPromptEvaluation(SearchDistanceEvaluation):
+    """Similarity evaluation that only accepts entries stored for the same prompt.
+
+    A single word can invert the meaning of a rule ("5 or higher" versus
+    "5 or lower"), so embedding distance alone must never select another prompt's
+    translation. Entries whose digest differs from the query's digest get a rank
+    below GPTCache's minimum, which no similarity threshold can accept.
+    """
+
+    def evaluation(
+        self, src_dict: dict[str, Any], cache_dict: dict[str, Any], **kwargs: Any
+    ) -> float:
+        cached_question = cache_dict.get("question")
+        query_question = src_dict.get("question")
+        if (
+            not isinstance(cached_question, str)
+            or not isinstance(query_question, str)
+            or cached_question != prompt_digest(query_question)
+        ):
+            return -1.0
+        return float(super().evaluation(src_dict, cache_dict, **kwargs))
 
 
 class GPTSemanticTranslationCache:
@@ -225,6 +331,7 @@ class GPTSemanticTranslationCache:
     ) -> None:
         self.root_dir = root_dir
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        migrate_cache_files(self.root_dir)
         self.similarity_threshold = similarity_threshold
         self.embedding_dimension = embedding_dimension
         self._embedding = HashingEmbedding(dimension=embedding_dimension)
@@ -271,7 +378,7 @@ class GPTSemanticTranslationCache:
                 pre_embedding_func=get_prompt,
                 embedding_func=self._embedding.to_embeddings,
                 data_manager=JsonVectorDataManager(self._storage_path(scope_key)),
-                similarity_evaluation=SearchDistanceEvaluation(max_distance=2.0),
+                similarity_evaluation=ExactPromptEvaluation(max_distance=2.0),
                 config=Config(
                     similarity_threshold=self.similarity_threshold,
                     enable_token_counter=False,

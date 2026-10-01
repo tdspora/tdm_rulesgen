@@ -34,7 +34,9 @@ Install optional extras only when you need them:
 ## Compile and Preview
 
 `compile_rule` validates a DSL expression and returns a `compiled_rule`.
-`preview_rule` runs that compiled rule against one row and seed.
+`preview_rule` runs that compiled rule against one row and seed. It accepts an
+optional `settings` argument like `compile_rule`; the rule result is limited to
+`RULESGEN_DSL_MAX_VALUE_LENGTH` (see [Configuration](configuration.md)).
 
 ```python
 from rulesgen import compile_rule, preview_rule
