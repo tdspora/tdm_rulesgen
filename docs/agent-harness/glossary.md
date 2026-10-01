@@ -48,7 +48,7 @@ When a term appears in `[[brackets]]` it is defined elsewhere in this document. 
 | **[[semantic frame]]** (`semantic_frame`) | Structured understanding of a rule before compilation — intent, dependencies, helper functions, entities, diagnostics. For `natural_language` input, it is the typed output an LLM translator must produce before the rule can continue through validation. |
 | **[[feedback retry]]** | Bounded repair loop in which compiler diagnostics are fed back to the LLM so it can correct only the invalid DSL elements. |
 | **[[prompt audit]]** (`prompt_audit`) | Persisted record of one [[NL translation]] attempt: prompt, response summary, template version, prompt-security flags. Used for audit + replay. |
-| **[[semantic cache]]** (`semantic_cache`) | GPTCache-backed similarity cache for [[NL translation]] requests, scoped by prompt version + model + table + schema fingerprint + requested targets. Cache keys are hashed so they do not expose raw input. |
+| **[[semantic cache]]** (`semantic_cache`) | GPTCache-backed cache for [[NL translation]] requests, scoped by prompt version + model + table + schema fingerprint + requested targets. A hit requires the exact same prompt text, matched by its SHA-256 digest; embedding similarity is only an additional gate, never enough on its own. Entries store the prompt digest, never the prompt text, and cache file names are digests of the scope. |
 | **[[LLM request metrics]]** (`llm_request_metrics`) | Aggregated token / latency / cache / cost metadata for one NL translation session. Surfaced for SLO and cost reporting. |
 
 ## 4. Compilation
